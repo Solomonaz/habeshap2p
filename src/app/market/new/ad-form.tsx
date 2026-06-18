@@ -1,0 +1,203 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import Link from "next/link";
+import { AD_SIDES, PAYMENT_METHODS } from "@/types/domain";
+import { PAYMENT_METHOD_LABELS, SIDE_LABELS } from "@/lib/labels";
+import { formatRate, formatEtb } from "@/lib/format";
+import { createAd, type CreateAdState } from "./actions";
+
+const initialState: CreateAdState = {};
+
+export function AdForm() {
+  const [state, formAction, pending] = useActionState(createAd, initialState);
+
+  // Local mirror so the live preview updates as the trader types.
+  const [side, setSide] = useState<(typeof AD_SIDES)[number]>("SELL");
+  const [rate, setRate] = useState("");
+  const [min, setMin] = useState("");
+  const [max, setMax] = useState("");
+
+  const showPreview = rate !== "" || min !== "" || max !== "";
+
+  return (
+    <form action={formAction} className="mt-6 space-y-6">
+      <fieldset>
+        <legend className="text-sm font-medium text-ink">I want to</legend>
+        <div
+          role="radiogroup"
+          aria-label="Ad side"
+          className="mt-2 inline-flex rounded-md border border-paper-border bg-paper-raised p-0.5"
+        >
+          {AD_SIDES.map((s) => (
+            <label
+              key={s}
+              className={
+                "cursor-pointer rounded px-3 py-1.5 text-sm transition-colors " +
+                (side === s
+                  ? "bg-ink text-paper-raised"
+                  : "text-ink-muted hover:text-ink")
+              }
+            >
+              <input
+                type="radio"
+                name="side"
+                value={s}
+                checked={side === s}
+                onChange={() => setSide(s)}
+                className="sr-only"
+              />
+              {SIDE_LABELS[s]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field
+          label="Rate (ETB / USDT)"
+          name="rate_etb"
+          value={rate}
+          onChange={setRate}
+          placeholder="155.50"
+        />
+        <Field
+          label="Min order (ETB)"
+          name="min_etb"
+          value={min}
+          onChange={setMin}
+          placeholder="1000"
+        />
+        <Field
+          label="Max order (ETB)"
+          name="max_etb"
+          value={max}
+          onChange={setMax}
+          placeholder="50000"
+        />
+      </div>
+
+      {side === "BUY" && (
+        <label className="block">
+          <span className="text-sm font-medium text-ink">
+            Your payment-account name
+          </span>
+          <p className="mt-0.5 text-xs text-ink-faint">
+            Since you are buying, sellers must see the name you will pay from.
+            They are instructed to refuse if it doesn&apos;t match.
+          </p>
+          <input
+            type="text"
+            name="payer_name"
+            autoComplete="name"
+            placeholder="Full name on your Telebirr / CBE account"
+            className="mt-1 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+          />
+        </label>
+      )}
+
+      <fieldset>
+        <legend className="text-sm font-medium text-ink">
+          Payment methods
+        </legend>
+        <p className="mt-0.5 text-xs text-ink-faint">
+          Only irreversible rails are allowed.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {PAYMENT_METHODS.map((m) => (
+            <label
+              key={m}
+              className="flex cursor-pointer items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink-soft has-[:checked]:border-amber has-[:checked]:bg-amber-wash has-[:checked]:text-amber"
+            >
+              <input
+                type="checkbox"
+                name="payment_methods"
+                value={m}
+                className="h-4 w-4 accent-amber"
+              />
+              {PAYMENT_METHOD_LABELS[m]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {showPreview && (
+        <div className="rounded-card border border-paper-border bg-paper-sunken p-4">
+          <p className="text-xs uppercase tracking-wide text-ink-faint">
+            Preview
+          </p>
+          <p className="mt-1 text-sm text-ink-muted">
+            You are {side === "SELL" ? "selling" : "buying"} USDT at{" "}
+            <span className="font-amount text-ink">
+              {rate ? formatRate(rate) : "—"}
+            </span>{" "}
+            ETB, for orders of{" "}
+            <span className="font-amount text-ink">
+              {min ? formatEtb(min) : "—"}
+            </span>
+            –
+            <span className="font-amount text-ink">
+              {max ? formatEtb(max) : "—"}
+            </span>{" "}
+            ETB.
+          </p>
+        </div>
+      )}
+
+      {state.error && (
+        <p
+          role="alert"
+          className="rounded-md border border-state-disputed/30 bg-state-disputed/10 px-3 py-2 text-sm text-state-disputed"
+        >
+          {state.error}
+        </p>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-amber px-5 py-2.5 text-sm font-medium text-paper-raised hover:bg-amber-soft disabled:opacity-60"
+        >
+          {pending ? "Posting…" : "Post ad"}
+        </button>
+        <Link
+          href="/market"
+          className="text-sm text-ink-muted hover:text-ink"
+        >
+          Cancel
+        </Link>
+      </div>
+    </form>
+  );
+}
+
+function Field({
+  label,
+  name,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="block">
+      <span className="text-sm font-medium text-ink">{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        name={name}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className="mt-1 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+      />
+    </label>
+  );
+}

@@ -1,0 +1,196 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import type { AdWithPoster } from "@/lib/ads";
+import type { PaymentMethod } from "@/types/domain";
+import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
+import { formatEtb, formatRate } from "@/lib/format";
+import { formatTradeLimit } from "@/lib/reputation";
+import { openOrder, type OpenOrderState } from "./actions";
+
+export function TradeForm({
+  ad,
+  takerLimit,
+}: {
+  ad: AdWithPoster;
+  takerLimit: number | null;
+}) {
+  const [state, formAction, pending] = useActionState<OpenOrderState, FormData>(
+    openOrder,
+    {},
+  );
+
+  // Taker is the BUYER when the advertiser is SELLing USDT.
+  const takerIsBuyer = ad.side === "SELL";
+  const rate = Number(ad.rate_etb);
+  const [amount, setAmount] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>(
+    ad.payment_methods[0] ?? "TELEBIRR",
+  );
+
+  const amountNum = Number(amount);
+  const etb = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * rate : 0;
+  const minUsdt = rate > 0 ? Number(ad.min_etb) / rate : 0;
+  const maxUsdt = rate > 0 ? Number(ad.max_etb) / rate : 0;
+
+  // Soft client-side hint; the SQL (order_create) is the authoritative guard.
+  const overLimit =
+    takerLimit !== null && amountNum > 0 && amountNum > takerLimit;
+
+  const action = takerIsBuyer ? "Buy" : "Sell";
+  const actionColor = takerIsBuyer
+    ? "bg-buy text-paper hover:opacity-90"
+    : "bg-sell text-paper hover:opacity-90";
+
+  return (
+    <div className="mt-6 rounded-card border border-paper-border bg-paper-raised p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-ink">
+          {action} USDT
+        </h1>
+        <span
+          className={
+            "rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide " +
+            (takerIsBuyer ? "bg-buy-wash text-buy" : "bg-sell-wash text-sell")
+          }
+        >
+          {action}
+        </span>
+      </div>
+
+      <dl className="mt-4 space-y-1.5 text-sm">
+        <div className="flex justify-between">
+          <dt className="text-ink-muted">Price</dt>
+          <dd className="font-amount text-ink">
+            {formatRate(ad.rate_etb)} ETB / USDT
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-ink-muted">Limits</dt>
+          <dd className="font-amount text-ink-soft">
+            {formatEtb(ad.min_etb)}–{formatEtb(ad.max_etb)} ETB
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-ink-muted">Counterparty</dt>
+          <dd className="text-ink-soft">
+            {ad.poster
+              ? `${ad.poster.completed_trades} trades · ${ad.poster.completion_rate}%`
+              : "New trader"}
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-ink-muted">Your trade limit</dt>
+          <dd className="font-amount text-ink-soft">
+            {formatTradeLimit(takerLimit)}
+          </dd>
+        </div>
+      </dl>
+
+      <form action={formAction} className="mt-6 space-y-4">
+        <input type="hidden" name="adId" value={ad.id} />
+
+        <label className="block">
+          <span className="text-sm font-medium text-ink">Amount (USDT)</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            name="amount_usdt"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.000000"
+            autoComplete="off"
+            className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 font-amount text-lg text-ink placeholder:text-ink-faint focus:border-amber"
+          />
+          <span className="mt-1 block text-xs text-ink-faint">
+            ≈ {minUsdt.toFixed(2)}–{maxUsdt.toFixed(2)} USDT for this ad&apos;s
+            limits
+          </span>
+          {overLimit && (
+            <span className="mt-1 block text-xs text-sell">
+              Exceeds your {formatTradeLimit(takerLimit)} per-order limit. Post a
+              merchant bond on your account to lift it.
+            </span>
+          )}
+        </label>
+
+        <div className="rounded-md bg-paper-sunken px-3 py-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-ink-muted">
+              {takerIsBuyer ? "You pay" : "You receive"}
+            </span>
+            <span className="font-amount text-ink">
+              {etb > 0 ? formatEtb(String(etb)) : "—"} ETB
+            </span>
+          </div>
+        </div>
+
+        <label className="block">
+          <span className="text-sm font-medium text-ink">Payment method</span>
+          <select
+            name="payment_method"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+            className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink focus:border-amber"
+          >
+            {ad.payment_methods.map((m) => (
+              <option key={m} value={m}>
+                {PAYMENT_METHOD_LABELS[m]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {takerIsBuyer ? (
+          <label className="block">
+            <span className="text-sm font-medium text-ink">
+              Your payment-account name
+            </span>
+            <input
+              type="text"
+              name="buyer_payment_name"
+              autoComplete="name"
+              placeholder="Full name on your Telebirr / CBE account"
+              className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+            />
+            <span className="mt-1 block text-xs text-ink-faint">
+              The seller will release only if the ETB arrives from this exact
+              name.
+            </span>
+          </label>
+        ) : (
+          <div className="rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-sm">
+            <span className="text-ink-muted">You receive ETB from</span>{" "}
+            <span className="text-ink">{ad.payer_name ?? "—"}</span>
+            <p className="mt-1 text-xs text-ink-faint">
+              Refuse to release if the payment comes from a different name.
+            </p>
+          </div>
+        )}
+
+        {state.error && (
+          <p
+            role="alert"
+            className="rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-sell"
+          >
+            {state.error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={pending || overLimit}
+          className={
+            "w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60 " +
+            actionColor
+          }
+        >
+          {pending ? "Opening…" : `${action} USDT`}
+        </button>
+        <p className="text-center text-xs text-ink-faint">
+          Opening locks the seller&apos;s USDT in escrow until release.
+        </p>
+      </form>
+    </div>
+  );
+}

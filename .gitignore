@@ -1,0 +1,36 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/.next-verify/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# testing
+/coverage
+
+# env — NEVER commit secrets (service-role key, Tron private key, etc.)
+.env
+.env.local
+.env.*.local
+
+# supabase local artifacts
+/supabase/.temp
+/supabase/.branches
+
+# misc
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
