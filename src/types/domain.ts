@@ -50,7 +50,13 @@ export const LEDGER_TYPES = [
 export type LedgerType = (typeof LEDGER_TYPES)[number];
 
 /** Whitelisted irreversible payment rails only (spec rule #3). */
-export const PAYMENT_METHODS = ["TELEBIRR", "CBE"] as const;
+export const PAYMENT_METHODS = [
+  "TELEBIRR",
+  "CBE",
+  "ABYSSINIA",
+  "AWASH",
+  "DASHEN",
+] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 export const DISPUTE_STATUSES = ["OPEN", "UNDER_REVIEW", "RESOLVED"] as const;

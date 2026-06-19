@@ -7,7 +7,7 @@ import { fetchActiveAds, type AdWithPoster } from "@/lib/ads";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_COLOR } from "@/lib/labels";
-import { traderHandle, traderInitial, traderColor } from "@/lib/handle";
+import { traderName, traderInitialFrom, traderColor } from "@/lib/handle";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
 
 // Tabs are from the TAKER's perspective (like Binance P2P):
@@ -209,7 +209,8 @@ function TabButton({
 
 function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
   const takerBuys = tab === "buy";
-  const handle = traderHandle(ad.user_id);
+  const name = traderName(ad.poster?.full_name, ad.user_id);
+  const verified = ad.poster?.is_verified ?? false;
   // Order ceiling in USDT, derived from the public ETB limits — no wallet leak.
   const rate = Number(ad.rate_etb);
   const minUsdt = rate > 0 ? (Number(ad.min_etb) / rate).toFixed(2) : "0";
@@ -223,13 +224,25 @@ function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
           className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-paper-raised"
           style={{ backgroundColor: traderColor(ad.user_id) }}
         >
-          {traderInitial(ad.user_id)}
+          {traderInitialFrom(ad.poster?.full_name, ad.user_id)}
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-ink">
-              {handle}
+              {name}
             </span>
+            {verified && (
+              <span
+                className="flex shrink-0 items-center text-buy"
+                title="Identity verified"
+                aria-label="Identity verified"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M12 2l2.4 1.8 3 .1 1 2.8 2.4 1.7-.9 2.9.9 2.9-2.4 1.7-1 2.8-3 .1L12 22l-2.4-1.8-3-.1-1-2.8L3.2 15l.9-2.9-.9-2.9 2.4-1.7 1-2.8 3-.1L12 2z" />
+                  <path d="M9 12l2 2 4-4" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            )}
             {ad.poster?.is_merchant && (
               <span
                 className="flex items-center gap-1 rounded-full bg-amber-wash px-1.5 py-0.5 text-[10px] font-semibold text-amber"

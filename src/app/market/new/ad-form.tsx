@@ -90,7 +90,7 @@ export function AdForm() {
             type="text"
             name="payer_name"
             autoComplete="name"
-            placeholder="Full name on your Telebirr / CBE account"
+            placeholder="Full name on your Telebirr / bank account"
             className="mt-1 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
           />
         </label>

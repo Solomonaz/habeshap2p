@@ -2,7 +2,8 @@
 
 Peer-to-peer **USDT ↔ ETB** escrow exchange for the Ethiopian diaspora, modeled
 on Binance P2P. The crypto side is escrowed via an **internal ledger** (database,
-zero per-trade gas); ETB settles directly between traders over Telebirr / CBE.
+zero per-trade gas); ETB settles directly between traders over Telebirr and
+trusted Ethiopian banks (CBE, Abyssinia, Awash, Dashen).
 The platform never touches ETB.
 
 > **Phases 0–7** of an 8-phase build are complete: scaffold + schema + RLS
@@ -210,7 +211,8 @@ The four non-negotiable escrow rules are enforced here:
    order and shown prominently to the seller, who is told to refuse on any
    mismatch. (For `SELL` ads the taker supplies it at order time; for `BUY` ads
    the advertiser sets it on the ad.)
-3. **Irreversible rails only.** Payment methods stay whitelisted to Telebirr / CBE.
+3. **Irreversible rails only.** Payment methods stay whitelisted to Telebirr and
+   trusted bank transfers (CBE, Bank of Abyssinia, Awash, Dashen).
 4. **Timer auto-cancel.** `order_expire_unpaid` cancels `CREATED` orders past
    their deadline and returns the locked USDT to the seller, driven by the
    secret-guarded cron endpoint.

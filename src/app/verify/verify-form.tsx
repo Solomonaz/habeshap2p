@@ -120,11 +120,13 @@ export function VerifyForm({
         <p className="mt-0.5 text-xs text-ink-faint">
           A clear photo of your passport, national ID, or driver&apos;s licence.
         </p>
+        {/* No `capture` attribute: on mobile that would force the camera open
+            and prevent choosing the existing ID photo. A plain file picker lets
+            the user pick from gallery/files OR snap a new one. */}
         <input
           id="idDoc"
           type="file"
           accept="image/*"
-          capture="environment"
           required
           onChange={(e) => setIdDoc(e.target.files?.[0] ?? null)}
           className={`mt-1 ${fileClass}`}
@@ -160,12 +162,16 @@ function cameraErrorMessage(err: unknown): string {
       case "NotAllowedError":
       case "SecurityError":
         return (
-          "We couldn't access this device's camera. Please open this page on " +
-          "your mobile phone and take the selfie there."
+          "Camera access was blocked. Allow camera access for this site in " +
+          "your browser settings, or use the button below to take the selfie " +
+          "with your camera app."
         );
       case "NotFoundError":
       case "OverconstrainedError":
-        return "No camera was found on this device.";
+        return (
+          "No camera was found here. If you're on a computer, open this page " +
+          "on your phone, or use the button below to take the selfie."
+        );
       case "NotReadableError":
         return (
           "The camera is in use by another app. Close it (Zoom, Teams, " +
@@ -173,7 +179,10 @@ function cameraErrorMessage(err: unknown): string {
         );
     }
   }
-  return "Couldn't open the camera. Allow camera access and try again.";
+  return (
+    "Couldn't open the camera. Allow camera access and try again, or use the " +
+    "button below to take the selfie with your camera app."
+  );
 }
 
 type CapturePhase = "idle" | "live" | "captured";
@@ -190,6 +199,17 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
   const [phase, setPhase] = useState<CapturePhase>("idle");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [camError, setCamError] = useState<string | null>(null);
+  // When the live camera (getUserMedia) can't be used — blocked permission,
+  // insecure context, no in-browser camera — we reveal a native capture input
+  // that opens the device's camera app directly. On a phone this still forces a
+  // fresh photo (capture="user"); it's the reliable path when getUserMedia fails.
+  const [showFallback, setShowFallback] = useState(false);
+
+  // Centralises "the live camera failed": show the reason and the fallback.
+  function failLiveCamera(message: string) {
+    setCamError(message);
+    setShowFallback(true);
+  }
 
   function stopStream() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -207,14 +227,17 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
   async function openCamera() {
     setCamError(null);
     if (!window.isSecureContext) {
-      setCamError(
-        "The camera only works over a secure connection (https). Open this " +
-          "page via https or localhost.",
+      failLiveCamera(
+        "The live camera needs a secure connection (https). Use the button " +
+          "below to take the selfie with your camera app instead.",
       );
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCamError("Camera access isn't supported on this device or browser.");
+      failLiveCamera(
+        "The live camera isn't supported in this browser. Use the button " +
+          "below to take the selfie with your camera app instead.",
+      );
       return;
     }
     try {
@@ -250,8 +273,28 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
         }
       });
     } catch (err) {
-      setCamError(cameraErrorMessage(err));
+      failLiveCamera(cameraErrorMessage(err));
     }
+  }
+
+  /**
+   * Fallback path: a captured photo from the native camera-app file input.
+   * Reuses the same preview/captured flow as the live camera so submission is
+   * identical downstream.
+   */
+  function onFallbackFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setCamError("Please choose an image file.");
+      return;
+    }
+    setCamError(null);
+    stopStream();
+    onCapture(file);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(file));
+    setPhase("captured");
   }
 
   function capture() {
@@ -285,7 +328,10 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
     onCapture(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    void openCamera();
+    // Back to the chooser so the user can re-open the live camera OR use the
+    // fallback — re-opening the live camera directly would just re-fail for
+    // anyone who landed on the fallback in the first place.
+    setPhase("idle");
   }
 
   const frameClass =
@@ -302,9 +348,23 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
       )}
 
       {phase === "idle" && (
-        <button type="button" onClick={openCamera} className={btn}>
-          Open camera
-        </button>
+        <div className="flex flex-col items-start gap-3">
+          <button type="button" onClick={openCamera} className={btn}>
+            Open camera
+          </button>
+          {showFallback && (
+            <label className={`${ghostBtn} cursor-pointer`}>
+              Take selfie with camera app
+              <input
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="sr-only"
+                onChange={onFallbackFile}
+              />
+            </label>
+          )}
+        </div>
       )}
 
       {phase === "live" && (

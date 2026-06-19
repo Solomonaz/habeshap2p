@@ -66,6 +66,19 @@ export async function fetchAd(
   return { ...ad, poster: profile ?? null };
 }
 
+/** Loads a single user's public profile (safe columns) by id, or null. */
+export async function fetchPublicProfile(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+): Promise<PublicProfile | null> {
+  const { data } = await supabase
+    .from("public_profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+  return data ?? null;
+}
+
 /** Loads the current user's own ads (any status) for management. */
 export async function fetchMyAds(
   supabase: SupabaseClient<Database>,

@@ -51,3 +51,22 @@ export function traderColor(id: string): string {
   const h = hash(id) % 360;
   return `hsl(${h} 55% 45%)`;
 }
+
+/**
+ * Display name for a counterparty. Prefers the registered legal name
+ * (public_profiles.full_name, captured at signup) and falls back to the stable
+ * pseudonym for accounts that predate name capture or left it blank. The id is
+ * still required so the fallback stays deterministic per-user.
+ */
+export function traderName(fullName: string | null | undefined, id: string): string {
+  const name = fullName?.trim();
+  return name && name.length > 0 ? name : traderHandle(id);
+}
+
+/** Avatar initial derived from the display name (real name when present). */
+export function traderInitialFrom(
+  fullName: string | null | undefined,
+  id: string,
+): string {
+  return traderName(fullName, id).charAt(0).toUpperCase();
+}

@@ -34,11 +34,39 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
+    // Allow the camera for our OWN origin only — the /verify liveness selfie
+    // needs getUserMedia. `camera=()` would block it everywhere (including us).
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=()",
+    value: "camera=(self), microphone=(), geolocation=(), payment=()",
   },
   { key: "X-DNS-Prefetch-Control", value: "off" },
 ];
+
+/**
+ * Server Actions enforce that the request's `Origin` header matches the
+ * forwarded host (a CSRF guard). When you preview the dev server through a
+ * tunnel (VS Code dev tunnels, etc.), the tunnel forwards `x-forwarded-host` as
+ * the public tunnel host but REWRITES the `Origin` header to the upstream
+ * target — `localhost:3001`. Next compares the two, sees a mismatch, and aborts
+ * with "Invalid Server Actions request".
+ *
+ * Next checks the *Origin* value against `allowedOrigins`, so the entries must
+ * be the rewritten localhost host:port (not the tunnel host). Gated to
+ * development so production keeps the strict same-origin guard.
+ */
+const devAllowedOrigins =
+  process.env.NODE_ENV !== "production"
+    ? [
+        "localhost:3000",
+        "localhost:3001",
+        "127.0.0.1:3000",
+        "127.0.0.1:3001",
+        // Escape hatch for any other host the tunnel reports (no port = exact host).
+        ...(process.env.ALLOWED_DEV_ORIGIN
+          ? [process.env.ALLOWED_DEV_ORIGIN]
+          : []),
+      ]
+    : [];
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -47,6 +75,9 @@ const nextConfig: NextConfig = {
   // Fail the production build on type or lint errors — money code must not ship broken.
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: false },
+  experimental: {
+    serverActions: { allowedOrigins: devAllowedOrigins },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -6,6 +6,7 @@ import type { PaymentMethod } from "@/types/domain";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { formatEtb, formatRate } from "@/lib/format";
 import { formatTradeLimit } from "@/lib/reputation";
+import { traderName } from "@/lib/handle";
 import { openOrder, type OpenOrderState } from "./actions";
 
 export function TradeForm({
@@ -73,6 +74,26 @@ export function TradeForm({
         </div>
         <div className="flex justify-between">
           <dt className="text-ink-muted">Counterparty</dt>
+          <dd className="flex items-center gap-1.5 text-ink-soft">
+            <span className="text-ink">
+              {traderName(ad.poster?.full_name, ad.user_id)}
+            </span>
+            {ad.poster?.is_verified && (
+              <span
+                className="inline-flex shrink-0 items-center text-buy"
+                title="Identity verified"
+                aria-label="Identity verified"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M12 2l2.4 1.8 3 .1 1 2.8 2.4 1.7-.9 2.9.9 2.9-2.4 1.7-1 2.8-3 .1L12 22l-2.4-1.8-3-.1-1-2.8L3.2 15l.9-2.9-.9-2.9 2.4-1.7 1-2.8 3-.1L12 2z" />
+                  <path d="M9 12l2 2 4-4" stroke="#fff" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+            )}
+          </dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-ink-muted">Track record</dt>
           <dd className="text-ink-soft">
             {ad.poster
               ? `${ad.poster.completed_trades} trades · ${ad.poster.completion_rate}%`
@@ -150,7 +171,7 @@ export function TradeForm({
               type="text"
               name="buyer_payment_name"
               autoComplete="name"
-              placeholder="Full name on your Telebirr / CBE account"
+              placeholder="Full name on your Telebirr / bank account"
               className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
             />
             <span className="mt-1 block text-xs text-ink-faint">

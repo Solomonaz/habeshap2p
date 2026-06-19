@@ -4,6 +4,9 @@ import type { PaymentMethod, AdSide } from "@/types/domain";
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TELEBIRR: "Telebirr",
   CBE: "CBE",
+  ABYSSINIA: "Bank of Abyssinia",
+  AWASH: "Awash Bank",
+  DASHEN: "Dashen Bank",
 };
 
 /**
@@ -13,6 +16,9 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
 export const PAYMENT_METHOD_COLOR: Record<PaymentMethod, string> = {
   TELEBIRR: "#0ecb81",
   CBE: "#8b5cf6",
+  ABYSSINIA: "#f6465d",
+  AWASH: "#f0b90b",
+  DASHEN: "#3b82f6",
 };
 
 /** Ad side described from the advertiser's perspective. */

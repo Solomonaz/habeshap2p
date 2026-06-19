@@ -28,7 +28,12 @@ export type LedgerType =
   | "BOND_RELEASE"
   | "WITHDRAW_LOCK"
   | "WITHDRAW_UNLOCK";
-export type PaymentMethod = "TELEBIRR" | "CBE";
+export type PaymentMethod =
+  | "TELEBIRR"
+  | "CBE"
+  | "ABYSSINIA"
+  | "AWASH"
+  | "DASHEN";
 export type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED";
 export type DisputeResolution = "FAVOUR_BUYER" | "FAVOUR_SELLER";
 export type ChainDirection = "IN" | "OUT";
@@ -445,6 +450,8 @@ export type Database = {
           avg_release_seconds: number;
           is_merchant: boolean;
           created_at: string;
+          full_name: string | null;
+          is_verified: boolean;
         };
         Relationships: [];
       };

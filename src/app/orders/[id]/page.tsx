@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchOrder } from "@/lib/orders";
+import { fetchPublicProfile } from "@/lib/ads";
 import { fetchMessages } from "@/lib/messages";
 import { fetchDisputeForOrder } from "@/lib/disputes";
 import { SiteHeader } from "@/components/site-header";
@@ -10,7 +11,7 @@ import { EscrowRail } from "@/components/escrow-rail";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
-import { traderHandle } from "@/lib/handle";
+import { traderName } from "@/lib/handle";
 import { OrderControls } from "./order-controls";
 import { OrderChat } from "./order-chat";
 
@@ -35,6 +36,11 @@ export default async function OrderPage({
 
   const messages = await fetchMessages(supabase, order.id);
   const counterpartyId = isBuyer ? order.seller_id : order.buyer_id;
+  const counterpartyProfile = await fetchPublicProfile(supabase, counterpartyId);
+  const counterpartyName = traderName(
+    counterpartyProfile?.full_name,
+    counterpartyId,
+  );
 
   const disputeRow =
     order.state === "DISPUTED"
@@ -142,7 +148,7 @@ export default async function OrderPage({
           orderId={order.id}
           currentUserId={user.id}
           initialMessages={messages}
-          counterpartyLabel={traderHandle(counterpartyId)}
+          counterpartyLabel={counterpartyName}
         />
       </main>
     </>

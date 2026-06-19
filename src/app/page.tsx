@@ -11,7 +11,7 @@ const TRUST_POINTS = [
   },
   {
     title: "Irreversible rails only",
-    body: "Birr settles over Telebirr and CBE — payment methods that can't be clawed back — so a seller who's been paid can release with confidence.",
+    body: "Birr settles over Telebirr and trusted banks (CBE, Abyssinia, Awash, Dashen) — rails that can't be clawed back — so a seller who's been paid can release with confidence.",
   },
   {
     title: "Disputes with a human",
@@ -39,7 +39,7 @@ export default function Home() {
       <p className="mt-4 max-w-xl text-ink-soft">
         A peer-to-peer exchange for the Ethiopian diaspora. The crypto side is
         held in escrow; Birr settles directly between traders over Telebirr and
-        CBE.
+        Ethiopian banks.
       </p>
 
       {/* Signature element preview: the escrow status rail. */}

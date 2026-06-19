@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { signOut } from "@/app/actions";
 import { Logo } from "@/components/logo";
+import { MobileMenu } from "@/components/mobile-menu";
 import { OrderNotifications } from "@/components/order-notifications";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin as fetchIsAdmin } from "@/lib/admin";
@@ -91,35 +92,17 @@ export async function SiteHeader({
               </span>
             </span>
           )}
-          <form action={signOut}>
+          {/* Desktop: standalone sign-out. Mobile: folded into the menu below. */}
+          <form action={signOut} className="hidden md:block">
             <button type="submit" className="btn-ghost px-3 py-1.5">
               Sign out
             </button>
           </form>
+
+          {/* Mobile: hamburger holds the nav links + sign out. */}
+          <MobileMenu nav={nav} active={active} account={account} />
         </div>
       </div>
-
-      {/* Mobile nav (wraps below the bar on small screens) */}
-      <nav className="flex items-center gap-1 overflow-x-auto border-t border-paper-border/60 px-4 py-1.5 md:hidden">
-        {nav.map((item) => {
-          const isActive = active === item.key;
-          return (
-            <Link
-              key={item.key}
-              href={item.href}
-              aria-current={isActive ? "page" : undefined}
-              className={
-                "whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
-                (isActive
-                  ? "bg-paper-sunken text-ink"
-                  : "text-ink-muted hover:text-ink")
-              }
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
     </header>
   );
 }
