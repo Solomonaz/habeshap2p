@@ -18,9 +18,12 @@ const CSP = [
   "object-src 'none'",
   "img-src 'self' data: blob: https:",
   "style-src 'self' 'unsafe-inline'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  // telegram.org hosts the Login Widget script.
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org",
   "font-src 'self' data:",
   "connect-src 'self' https: wss:",
+  // The Login Widget renders its button inside an oauth.telegram.org iframe.
+  "frame-src https://oauth.telegram.org",
 ].join("; ");
 
 const securityHeaders = [

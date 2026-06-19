@@ -9,8 +9,9 @@ import type { AccountIdentity } from "@/lib/identity";
 
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
+// "Order book" is intentionally omitted: the HabeshaP2P logo already links to
+// /market, so a separate nav item would be redundant.
 const NAV: { href: string; label: string; key: Page }[] = [
-  { href: "/market", label: "Order book", key: "market" },
   { href: "/orders", label: "Orders", key: "orders" },
   { href: "/market/mine", label: "My ads", key: "mine" },
   { href: "/dashboard", label: "Account", key: "dashboard" },

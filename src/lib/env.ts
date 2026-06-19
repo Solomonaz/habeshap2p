@@ -10,21 +10,32 @@ import { z } from "zod";
  *    from client code throws (see guard below).
  */
 
-const publicSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-});
-
 /**
- * An optional secret that may also be present-but-blank in a .env file. A
+ * An optional value that may also be present-but-blank in a .env file. A
  * placeholder line like `TRON_API_KEY=` yields an empty string, not `undefined`,
  * so a plain `.optional()` would still trip `.min(1)`. We normalize "" → undefined
- * first so blank placeholders are treated as unset.
+ * first so blank placeholders are treated as unset. Used for both optional
+ * server secrets and optional public values.
  */
 const optionalSecret = z.preprocess(
   (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
   z.string().min(1).optional(),
 );
+
+const publicSchema = z.object({
+  NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  // Telegram bot username (without the @) backing the Login Widget. Optional:
+  // when unset, the Telegram sign-in button simply doesn't render and the app
+  // runs on email/password only.
+  NEXT_PUBLIC_TELEGRAM_BOT_USERNAME: optionalSecret,
+  // Numeric Telegram bot id (the integer BEFORE the colon in the BotFather
+  // token, e.g. "123456789" from "123456789:AA…"). Public — it drives the
+  // programmatic Login Widget popup. Optional: the "Continue with Telegram"
+  // button still renders for visual parity, but clicking it without this set
+  // bounces to /login?error=telegram_unconfigured.
+  NEXT_PUBLIC_TELEGRAM_BOT_ID: optionalSecret,
+});
 
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
@@ -39,6 +50,11 @@ const serverSchema = z.object({
   TRON_API_KEY: optionalSecret,
   TRON_HOT_WALLET_ADDRESS: optionalSecret,
   TRON_HOT_WALLET_PRIVATE_KEY: optionalSecret,
+  // ── Telegram auth ── Bot token from @BotFather, used SERVER-SIDE only to
+  // verify the HMAC signature on Login Widget callbacks (and to derive the
+  // per-user session password). Optional so the build/dev run without it; the
+  // /auth/telegram route refuses to mint a session when it's unset.
+  TELEGRAM_BOT_TOKEN: optionalSecret,
 });
 
 function format(error: z.ZodError): string {
@@ -50,6 +66,9 @@ function format(error: z.ZodError): string {
 const publicParsed = publicSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_TELEGRAM_BOT_USERNAME:
+    process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME,
+  NEXT_PUBLIC_TELEGRAM_BOT_ID: process.env.NEXT_PUBLIC_TELEGRAM_BOT_ID,
 });
 
 if (!publicParsed.success) {
@@ -78,6 +97,7 @@ export function getServerEnv() {
     TRON_API_KEY: process.env.TRON_API_KEY,
     TRON_HOT_WALLET_ADDRESS: process.env.TRON_HOT_WALLET_ADDRESS,
     TRON_HOT_WALLET_PRIVATE_KEY: process.env.TRON_HOT_WALLET_PRIVATE_KEY,
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   });
   if (!parsed.success) {
     throw new Error(

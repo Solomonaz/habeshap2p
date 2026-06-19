@@ -3,6 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { publicEnv } from "@/lib/env";
+import { TelegramLoginButton } from "@/components/telegram-login-button";
+import { GoogleLoginButton } from "@/components/google-login-button";
+import { PasswordInput } from "@/components/password-input";
 
 export function SignupForm() {
   const [fullName, setFullName] = useState("");
@@ -13,6 +17,7 @@ export function SignupForm() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
+  const telegramBotId = publicEnv.NEXT_PUBLIC_TELEGRAM_BOT_ID;
   const supabase = createClient();
 
   async function onSubmit(e: React.FormEvent) {
@@ -54,16 +59,15 @@ export function SignupForm() {
   }
 
   const inputClass =
-    "w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 " +
+    "w-full rounded-lg border border-paper-border bg-paper-sunken/60 px-3 py-2.5 " +
     "text-ink placeholder:text-ink-faint focus-visible:border-amber";
-  const buttonClass =
-    "w-full rounded-md bg-amber px-4 py-2 font-medium text-paper-raised " +
-    "transition-colors hover:bg-amber-soft disabled:opacity-50";
+  const labelClass =
+    "block text-xs font-medium uppercase tracking-wide text-ink-soft";
 
   if (sent) {
     return (
-      <div className="w-full max-w-sm rounded-card border border-paper-border bg-paper-raised p-6 shadow-sm">
-        <h1 className="text-xl font-semibold text-ink">Check your email</h1>
+      <div>
+        <h1 className="text-2xl font-semibold text-ink">Check your email</h1>
         <p className="mt-2 text-sm text-ink-muted">
           We sent a confirmation link to{" "}
           <span className="font-medium text-ink">{email}</span>. Click it to
@@ -80,16 +84,16 @@ export function SignupForm() {
   }
 
   return (
-    <div className="w-full max-w-sm rounded-card border border-paper-border bg-paper-raised p-6 shadow-sm">
-      <h1 className="text-xl font-semibold text-ink">Create your account</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Sign up with your email. We&apos;ll send a link to confirm it&apos;s
+    <div>
+      <h1 className="text-2xl font-semibold text-ink">Create your account</h1>
+      <p className="mt-1.5 text-sm text-ink-muted">
+        Sign up with your email — we&apos;ll send a link to confirm it&apos;s
         real.
       </p>
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div>
-          <label htmlFor="fullName" className="block text-sm text-ink-soft">
+          <label htmlFor="fullName" className={labelClass}>
             Full name
           </label>
           <input
@@ -100,11 +104,11 @@ export function SignupForm() {
             placeholder="As it appears on your ID"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         <div>
-          <label htmlFor="email" className="block text-sm text-ink-soft">
+          <label htmlFor="email" className={labelClass}>
             Email address
           </label>
           <input
@@ -115,46 +119,56 @@ export function SignupForm() {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         <div>
-          <label htmlFor="password" className="block text-sm text-ink-soft">
+          <label htmlFor="password" className={labelClass}>
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="new-password"
             required
             placeholder="At least 8 characters"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         <div>
-          <label htmlFor="confirm" className="block text-sm text-ink-soft">
+          <label htmlFor="confirm" className={labelClass}>
             Confirm password
           </label>
-          <input
+          <PasswordInput
             id="confirm"
-            type="password"
             autoComplete="new-password"
             required
             placeholder="Re-enter your password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         {error && <p className="text-sm text-state-disputed">{error}</p>}
-        <button type="submit" disabled={loading} className={buttonClass}>
+        <button type="submit" disabled={loading} className="btn-primary w-full">
           {loading ? "Creating…" : "Create account"}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-ink-muted">
+      <div className="my-5 flex items-center gap-3">
+        <span className="h-px flex-1 bg-paper-border" />
+        <span className="text-xs uppercase tracking-wide text-ink-faint">
+          or continue with
+        </span>
+        <span className="h-px flex-1 bg-paper-border" />
+      </div>
+      <div className="space-y-3">
+        <GoogleLoginButton />
+        <TelegramLoginButton botId={telegramBotId} />
+      </div>
+
+      <p className="mt-6 text-center text-sm text-ink-muted">
         Already have an account?{" "}
         <Link href="/login" className="text-amber underline">
           Sign in

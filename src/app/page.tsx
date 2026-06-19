@@ -26,12 +26,20 @@ export default function Home() {
         <p className="text-sm font-medium uppercase tracking-wide text-ink-muted">
           HabeshaP2P
         </p>
-        <a
-          href="/login"
-          className="rounded-md bg-amber px-4 py-1.5 text-sm font-medium text-paper-raised transition-colors hover:bg-amber-soft"
-        >
-          Sign in
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href="/login"
+            className="rounded-md px-4 py-1.5 text-sm font-medium text-ink-soft transition-colors hover:text-ink"
+          >
+            Sign in
+          </a>
+          <a
+            href="/signup"
+            className="rounded-md bg-amber px-4 py-1.5 text-sm font-medium text-paper-raised transition-colors hover:bg-amber-soft"
+          >
+            Sign up
+          </a>
+        </div>
       </div>
       <h1 className="mt-2 text-3xl font-semibold text-ink sm:text-4xl">
         USDT ↔ ETB, settled with escrow you can trust.

@@ -1,9 +1,10 @@
 import { SignupForm } from "./signup-form";
+import { AuthShell } from "@/components/auth-shell";
 
 export default function SignupPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-16">
+    <AuthShell>
       <SignupForm />
-    </main>
+    </AuthShell>
   );
 }

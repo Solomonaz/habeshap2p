@@ -1,16 +1,15 @@
 import { Suspense } from "react";
 import { LoginForm } from "./login-form";
+import { AuthShell } from "@/components/auth-shell";
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 py-16">
+    <AuthShell>
       <Suspense
-        fallback={
-          <div className="text-sm text-ink-muted">Loading sign-in…</div>
-        }
+        fallback={<div className="text-sm text-ink-muted">Loading sign-in…</div>}
       >
         <LoginForm />
       </Suspense>
-    </main>
+    </AuthShell>
   );
 }

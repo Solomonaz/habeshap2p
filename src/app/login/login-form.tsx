@@ -4,6 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { publicEnv } from "@/lib/env";
+import { TelegramLoginButton } from "@/components/telegram-login-button";
+import { GoogleLoginButton } from "@/components/google-login-button";
+import { PasswordInput } from "@/components/password-input";
 
 export function LoginForm() {
   const router = useRouter();
@@ -13,6 +17,11 @@ export function LoginForm() {
   const errorParam = searchParams.get("error");
   const confirmError = errorParam === "confirm";
   const unconfirmed = errorParam === "unconfirmed";
+  const telegramError = errorParam === "telegram";
+  const telegramUnconfigured = errorParam === "telegram_unconfigured";
+  const oauthError = errorParam === "oauth";
+
+  const telegramBotId = publicEnv.NEXT_PUBLIC_TELEGRAM_BOT_ID;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,40 +48,55 @@ export function LoginForm() {
   }
 
   const inputClass =
-    "w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 " +
+    "w-full rounded-lg border border-paper-border bg-paper-sunken/60 px-3 py-2.5 " +
     "text-ink placeholder:text-ink-faint focus-visible:border-amber";
-  const buttonClass =
-    "w-full rounded-md bg-amber px-4 py-2 font-medium text-paper-raised " +
-    "transition-colors hover:bg-amber-soft disabled:opacity-50";
 
   return (
-    <div className="w-full max-w-sm rounded-card border border-paper-border bg-paper-raised p-6 shadow-sm">
-      <h1 className="text-xl font-semibold text-ink">Sign in</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Welcome back. Sign in with your email and password.
+    <div>
+      <h1 className="text-2xl font-semibold text-ink">Welcome back</h1>
+      <p className="mt-1.5 text-sm text-ink-muted">
+        Sign in to your HabeshaP2P account.
       </p>
 
       {justConfirmed && (
-        <p className="mt-4 rounded-md border border-state-released/40 bg-buy-wash px-3 py-2 text-sm text-state-released">
+        <p className="mt-5 rounded-md border border-state-released/40 bg-buy-wash px-3 py-2 text-sm text-state-released">
           Email confirmed — you can sign in now.
         </p>
       )}
       {confirmError && (
-        <p className="mt-4 rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-state-disputed">
+        <p className="mt-5 rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-state-disputed">
           That confirmation link is invalid or expired. Try signing in or sign
           up again.
         </p>
       )}
       {unconfirmed && (
-        <p className="mt-4 rounded-md border border-amber/40 bg-amber-wash px-3 py-2 text-sm text-amber">
+        <p className="mt-5 rounded-md border border-amber/40 bg-amber-wash px-3 py-2 text-sm text-amber">
           Please confirm your email first — check your inbox for the link we
           sent.
+        </p>
+      )}
+      {oauthError && (
+        <p className="mt-5 rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-state-disputed">
+          Google sign-in failed or was cancelled. Please try again.
+        </p>
+      )}
+      {telegramError && (
+        <p className="mt-5 rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-state-disputed">
+          Telegram sign-in failed or was cancelled. Please try again.
+        </p>
+      )}
+      {telegramUnconfigured && (
+        <p className="mt-5 rounded-md border border-amber/40 bg-amber-wash px-3 py-2 text-sm text-amber">
+          Telegram sign-in isn&apos;t configured on this server yet.
         </p>
       )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm text-ink-soft">
+          <label
+            htmlFor="email"
+            className="block text-xs font-medium uppercase tracking-wide text-ink-soft"
+          >
             Email address
           </label>
           <input
@@ -83,31 +107,45 @@ export function LoginForm() {
             placeholder="you@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         <div>
-          <label htmlFor="password" className="block text-sm text-ink-soft">
+          <label
+            htmlFor="password"
+            className="block text-xs font-medium uppercase tracking-wide text-ink-soft"
+          >
             Password
           </label>
-          <input
+          <PasswordInput
             id="password"
-            type="password"
             autoComplete="current-password"
             required
             placeholder="Your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className={`mt-1 ${inputClass}`}
+            className={`mt-1.5 ${inputClass}`}
           />
         </div>
         {error && <p className="text-sm text-state-disputed">{error}</p>}
-        <button type="submit" disabled={loading} className={buttonClass}>
+        <button type="submit" disabled={loading} className="btn-primary w-full">
           {loading ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-ink-muted">
+      <div className="my-5 flex items-center gap-3">
+        <span className="h-px flex-1 bg-paper-border" />
+        <span className="text-xs uppercase tracking-wide text-ink-faint">
+          or continue with
+        </span>
+        <span className="h-px flex-1 bg-paper-border" />
+      </div>
+      <div className="space-y-3">
+        <GoogleLoginButton next={next} />
+        <TelegramLoginButton botId={telegramBotId} />
+      </div>
+
+      <p className="mt-6 text-center text-sm text-ink-muted">
         New here?{" "}
         <Link href="/signup" className="text-amber underline">
           Create an account
