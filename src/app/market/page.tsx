@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchActiveAds } from "@/lib/ads";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { OrderBook } from "./order-book";
 
 export default async function MarketPage() {
@@ -20,7 +21,7 @@ export default async function MarketPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="market" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="market" userId={user.id} />
       <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>

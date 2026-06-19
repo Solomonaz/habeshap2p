@@ -2,8 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchAd } from "@/lib/ads";
+import { fetchKycStatus } from "@/lib/kyc";
 import { tradeLimitUsdt } from "@/lib/reputation";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { TradeForm } from "./trade-form";
 
 export default async function TradePage({
@@ -17,6 +19,11 @@ export default async function TradePage({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  // Taking an order locks USDT — a trading action, blocked until verified.
+  if ((await fetchKycStatus(supabase, user.id)) !== "APPROVED") {
+    redirect("/verify");
+  }
 
   const [ad, { data: profile }] = await Promise.all([
     fetchAd(supabase, adId),
@@ -36,7 +43,7 @@ export default async function TradePage({
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="market" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="market" userId={user.id} />
       <main className="mx-auto max-w-xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/market" className="text-sm text-ink-muted hover:text-ink">
           ← Back to order book

@@ -8,6 +8,7 @@ import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { traderHandle } from "@/lib/handle";
+import { accountLabel } from "@/lib/identity";
 import { AdminResolve } from "./admin-resolve";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export default async function AdminDisputePage({
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
+      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
           ← Dispute queue

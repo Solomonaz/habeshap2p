@@ -11,6 +11,8 @@ import {
 import { ensureDepositAddress } from "@/lib/deposits";
 import { fetchWithdrawalsForUser } from "@/lib/withdrawals";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
+import Link from "next/link";
 import { MerchantBond } from "./merchant-bond";
 import { WithdrawForm } from "./withdraw-form";
 import { devFaucet } from "./actions";
@@ -44,7 +46,9 @@ export default async function DashboardPage() {
       .single(),
     supabase
       .from("users")
-      .select("reputation_score, completed_trades, completion_rate, is_merchant")
+      .select(
+        "reputation_score, completed_trades, completion_rate, is_merchant, kyc_status",
+      )
       .eq("id", user.id)
       .single(),
   ]);
@@ -62,12 +66,36 @@ export default async function DashboardPage() {
   const completedTrades = profile?.completed_trades ?? 0;
   const tier = reputationTier({ isMerchant, completedTrades });
   const tradeLimit = tradeLimitUsdt({ isMerchant, completedTrades });
+  const kycStatus = profile?.kyc_status ?? "UNVERIFIED";
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="dashboard" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="dashboard" userId={user.id} />
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="text-xl font-semibold text-ink">Account</h1>
+
+      {kycStatus !== "APPROVED" && (
+        <div className="mt-4 rounded-card border border-amber/40 bg-amber-wash p-4">
+          <h2 className="text-sm font-medium text-amber">
+            {kycStatus === "PENDING"
+              ? "Verification under review"
+              : "Verify your identity to start trading"}
+          </h2>
+          <p className="mt-1 text-sm text-ink-soft">
+            {kycStatus === "PENDING"
+              ? "Our team is reviewing your documents. Trading and withdrawals unlock once you're approved."
+              : "Trading, posting ads, and withdrawals are locked until your identity is verified."}
+          </p>
+          {kycStatus !== "PENDING" && (
+            <Link
+              href="/verify"
+              className="mt-3 inline-block rounded-md bg-amber px-4 py-2 text-sm font-semibold text-paper hover:bg-amber-soft"
+            >
+              {kycStatus === "REJECTED" ? "Resubmit verification" : "Verify now"}
+            </Link>
+          )}
+        </div>
+      )}
 
       <section className="mt-6 grid gap-4 sm:grid-cols-2">
         <div className="rounded-card border border-paper-border bg-paper-raised p-5">

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchMyOrders } from "@/lib/orders";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb } from "@/lib/format";
 import type { OrderState } from "@/types/domain";
@@ -26,7 +27,7 @@ export default async function OrdersPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="orders" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="orders" userId={user.id} />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <h1 className="text-xl font-semibold text-ink">Orders</h1>
         <p className="mt-1 text-sm text-ink-muted">

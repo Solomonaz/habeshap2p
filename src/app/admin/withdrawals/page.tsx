@@ -5,6 +5,7 @@ import { fetchPendingWithdrawals } from "@/lib/withdrawals";
 import { formatUsdt } from "@/lib/money";
 import { traderHandle } from "@/lib/handle";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { WithdrawalReview } from "./review";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function AdminWithdrawalsPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
+      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <h1 className="text-xl font-semibold text-ink">Withdrawal approvals</h1>
         <p className="mt-1 text-sm text-ink-muted">

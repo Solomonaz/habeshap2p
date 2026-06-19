@@ -7,6 +7,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { resolveDispute } from "@/lib/disputes";
 import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
+import { approveKyc, rejectKyc } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
 import { DISPUTE_RESOLUTIONS } from "@/types/domain";
 
@@ -153,5 +154,91 @@ export async function rejectWithdrawalAction(
   });
 
   revalidatePath("/admin/withdrawals");
+  return {};
+}
+
+const kycSchema = z.object({
+  submissionId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+});
+
+export type KycReviewState = { error?: string };
+
+/**
+ * Admin clears a pending identity submission; the account becomes APPROVED and
+ * the database triggers (migration 0015) stop blocking that user's trades. Same
+ * triple authorization as the other admin actions (route guard, here, and SQL).
+ */
+export async function approveKycAction(
+  _prev: KycReviewState,
+  formData: FormData,
+): Promise<KycReviewState> {
+  const parsed = kycSchema.safeParse({
+    submissionId: formData.get("submissionId"),
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await approveKyc(parsed.data.submissionId, user.id);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Approval failed" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "kyc_approve",
+    targetType: "kyc_submission",
+    targetId: parsed.data.submissionId,
+  });
+
+  revalidatePath("/admin/kyc");
+  return {};
+}
+
+/** Admin denies a pending submission; the user may resubmit. */
+export async function rejectKycAction(
+  _prev: KycReviewState,
+  formData: FormData,
+): Promise<KycReviewState> {
+  const parsed = kycSchema.safeParse({
+    submissionId: formData.get("submissionId"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  const reason = parsed.data.reason?.trim() || "Rejected by admin";
+  try {
+    await rejectKyc(parsed.data.submissionId, user.id, reason);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Rejection failed" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "kyc_reject",
+    targetType: "kyc_submission",
+    targetId: parsed.data.submissionId,
+    detail: reason,
+  });
+
+  revalidatePath("/admin/kyc");
   return {};
 }

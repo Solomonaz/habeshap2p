@@ -39,6 +39,7 @@ export type WithdrawalStatus =
   | "CONFIRMED"
   | "REJECTED"
   | "FAILED";
+export type KycStatus = "UNVERIFIED" | "PENDING" | "APPROVED" | "REJECTED";
 
 export type Database = {
   public: {
@@ -46,7 +47,11 @@ export type Database = {
       users: {
         Row: {
           id: string;
+          full_name: string | null;
           phone: string | null;
+          email: string | null;
+          telegram_id: number | null;
+          telegram_username: string | null;
           device_fingerprint: string | null;
           reputation_score: number;
           completed_trades: number;
@@ -54,11 +59,16 @@ export type Database = {
           avg_release_seconds: number;
           is_merchant: boolean;
           is_admin: boolean;
+          kyc_status: KycStatus;
           created_at: string;
         };
         Insert: {
           id: string;
+          full_name?: string | null;
           phone?: string | null;
+          email?: string | null;
+          telegram_id?: number | null;
+          telegram_username?: string | null;
           device_fingerprint?: string | null;
           reputation_score?: number;
           completed_trades?: number;
@@ -66,10 +76,15 @@ export type Database = {
           avg_release_seconds?: number;
           is_merchant?: boolean;
           is_admin?: boolean;
+          kyc_status?: KycStatus;
           created_at?: string;
         };
         Update: {
+          full_name?: string | null;
           phone?: string | null;
+          email?: string | null;
+          telegram_id?: number | null;
+          telegram_username?: string | null;
           device_fingerprint?: string | null;
           reputation_score?: number;
           completed_trades?: number;
@@ -77,6 +92,7 @@ export type Database = {
           avg_release_seconds?: number;
           is_merchant?: boolean;
           is_admin?: boolean;
+          kyc_status?: KycStatus;
         };
         Relationships: [];
       };
@@ -392,6 +408,32 @@ export type Database = {
           },
         ];
       };
+      kyc_submissions: {
+        // Identity-verification attempts (migration 0015). Written only by the
+        // kyc_submit/approve/reject RPCs; users read their own, admins read all.
+        Row: {
+          id: string;
+          user_id: string;
+          id_document_path: string;
+          liveness_path: string;
+          full_name: string;
+          status: KycStatus;
+          rejection_reason: string | null;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "kyc_submissions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       public_profiles: {
@@ -517,6 +559,24 @@ export type Database = {
         Args: { p_id: string };
         Returns: undefined;
       };
+      // ── identity verification (migration 0015) ──
+      kyc_submit: {
+        Args: {
+          p_user: string;
+          p_id_document: string;
+          p_liveness: string;
+          p_full_name: string;
+        };
+        Returns: string; // new submission id
+      };
+      kyc_approve: {
+        Args: { p_id: string; p_admin: string };
+        Returns: undefined;
+      };
+      kyc_reject: {
+        Args: { p_id: string; p_admin: string; p_reason: string };
+        Returns: undefined;
+      };
       // ── admin audit log + ops stats (migration 0013) ──
       record_admin_action: {
         Args: {
@@ -558,6 +618,7 @@ export type Database = {
       dispute_resolution: DisputeResolution;
       chain_direction: ChainDirection;
       withdrawal_status: WithdrawalStatus;
+      kyc_status: KycStatus;
     };
     CompositeTypes: Record<never, never>;
   };

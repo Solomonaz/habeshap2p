@@ -5,6 +5,7 @@ import { fetchOrder } from "@/lib/orders";
 import { fetchMessages } from "@/lib/messages";
 import { fetchDisputeForOrder } from "@/lib/disputes";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { EscrowRail } from "@/components/escrow-rail";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
@@ -45,7 +46,7 @@ export default async function OrderPage({
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="orders" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="orders" userId={user.id} />
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/orders" className="text-sm text-ink-muted hover:text-ink">
           ← All orders

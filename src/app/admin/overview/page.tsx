@@ -8,6 +8,7 @@ import { summarizeReserves } from "@/lib/platform";
 import { formatUsdt } from "@/lib/money";
 import { traderHandle } from "@/lib/handle";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export default async function AdminOverviewPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
+      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-ink">Ops overview</h1>

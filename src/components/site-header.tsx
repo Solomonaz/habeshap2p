@@ -4,6 +4,7 @@ import { Logo } from "@/components/logo";
 import { OrderNotifications } from "@/components/order-notifications";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin as fetchIsAdmin } from "@/lib/admin";
+import type { AccountIdentity } from "@/lib/identity";
 
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
@@ -14,22 +15,13 @@ const NAV: { href: string; label: string; key: Page }[] = [
   { href: "/dashboard", label: "Account", key: "dashboard" },
 ];
 
-/** Pretty-print an E.164-ish Ethiopian number: 251933234567 → +251 93 323 4567. */
-function formatPhone(raw: string): string {
-  const d = raw.replace(/\D/g, "");
-  if (d.startsWith("251") && d.length === 12) {
-    return `+251 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
-  }
-  return raw.startsWith("+") ? raw : `+${d}`;
-}
-
 export async function SiteHeader({
-  phone,
+  account,
   active,
   userId,
   isAdmin,
 }: {
-  phone?: string | null;
+  account?: AccountIdentity | null;
   active?: Page;
   userId?: string;
   isAdmin?: boolean;
@@ -89,13 +81,13 @@ export async function SiteHeader({
 
         {/* Account cluster */}
         <div className="flex items-center gap-2.5">
-          {phone && (
+          {account && (
             <span className="hidden items-center gap-2 rounded-full border border-paper-border bg-paper-sunken/60 py-1 pl-1 pr-3 sm:inline-flex">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper">
-                {formatPhone(phone).replace(/\D/g, "").slice(-2)}
+                {account.initials}
               </span>
-              <span className="font-amount text-xs text-ink-soft">
-                {formatPhone(phone)}
+              <span className="max-w-[12rem] truncate text-xs text-ink-soft">
+                {account.label}
               </span>
             </span>
           )}

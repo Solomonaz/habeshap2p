@@ -7,6 +7,7 @@ import { SiteHeader } from "@/components/site-header";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb } from "@/lib/format";
 import { traderHandle } from "@/lib/handle";
+import { accountLabel } from "@/lib/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function AdminPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
+      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-ink">Dispute queue</h1>
@@ -39,6 +40,12 @@ export default async function AdminPage() {
               className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
             >
               Withdrawal approvals
+            </Link>
+            <Link
+              href="/admin/kyc"
+              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
+            >
+              Verifications
             </Link>
           </nav>
         </div>

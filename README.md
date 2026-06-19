@@ -97,6 +97,17 @@ and run them in sequence.
 > `storage.*` DDL, create the `trade-proofs` bucket (set **Public = off**) in the
 > dashboard Storage UI and add the two policies from `0008` by hand.
 
+> **KYC storage bucket + gate (Stage 2).** Migration `0015` creates a **private**
+> `kyc` bucket for government-ID + liveness images (objects scoped to each user's
+> own folder; admins may read for review) and adds a `kyc_status` column plus
+> `BEFORE INSERT` triggers on `ads`, `orders`, and `withdrawals` that hard-block
+> trading until `kyc_status = 'APPROVED'`. Every account (including ones created
+> before this migration) starts `UNVERIFIED`: users submit at `/verify`, an admin
+> approves at `/admin/kyc`. **For local dev**, approve your test account through
+> `/admin/kyc` (or set `kyc_status = 'APPROVED'` on your row) before the dev
+> faucet / trading flow will work. If your project blocks `storage.*` DDL, create
+> the `kyc` bucket (**Public = off**) and add the two policies from `0015` by hand.
+
 > **Phone OTP needs an SMS provider.** Supabase Auth sends the OTP, but actual
 > SMS delivery requires configuring a provider (Twilio / MessageBird / Vonage)
 > in **Authentication → Providers → Phone** — that is a paid, per-message vendor
@@ -517,8 +528,12 @@ These are deliberately not solved in the minimum-cost MVP:
 - **Hot-wallet key security** — self-custody means key safety is entirely on the
   operator. Cold storage for bulk funds + small hot float + withdrawal approval
   threshold are the MVP controls.
-- **KYC / identity** — no vendor; banned users can re-register. Phone+device
-  binding raises the cost only.
+- **KYC / identity** — manual review only (no paid vendor). Stage 2 requires a
+  government-ID photo + liveness selfie before any trade, ad, or withdrawal, with
+  an admin approving each submission at `/admin/kyc`; the gate is enforced by DB
+  triggers, not just the UI. Manual review can still be fooled by a forged or
+  borrowed ID, and a determined banned user could re-register with new documents —
+  this raises the cost of abuse without eliminating it.
 
 Phase-3 specific gaps flagged for later phases:
 

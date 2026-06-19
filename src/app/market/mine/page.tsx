@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchMyAds } from "@/lib/ads";
 import { SiteHeader } from "@/components/site-header";
+import { accountLabel } from "@/lib/identity";
 import { MyAds } from "./my-ads";
 
 export default async function MyAdsPage() {
@@ -16,7 +17,7 @@ export default async function MyAdsPage() {
 
   return (
     <>
-      <SiteHeader phone={user.phone} active="mine" userId={user.id} />
+      <SiteHeader account={accountLabel(user)} active="mine" userId={user.id} />
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

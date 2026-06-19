@@ -4,7 +4,7 @@ import { publicEnv } from "@/lib/env";
 import type { Database } from "@/lib/supabase/database.types";
 
 /** Routes that require an authenticated session. */
-const PROTECTED_PREFIXES = ["/dashboard", "/market", "/orders"];
+const PROTECTED_PREFIXES = ["/dashboard", "/market", "/orders", "/verify"];
 
 /**
  * Refreshes the Supabase auth session on every request (so server components
@@ -56,6 +56,17 @@ export async function updateSession(
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", request.nextUrl.pathname);
+    return NextResponse.redirect(url);
+  }
+
+  // Defence in depth: even if a session exists, an unconfirmed email must not
+  // reach protected routes. Supabase's "Confirm email" setting already blocks
+  // password sign-in for unconfirmed accounts; this guards the case where that
+  // setting is off or a session predates confirmation.
+  if (user && isProtected && !user.email_confirmed_at) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.searchParams.set("error", "unconfirmed");
     return NextResponse.redirect(url);
   }
 
