@@ -12,6 +12,7 @@ import {
   MIN_MERCHANT_BOND,
 } from "@/lib/reputation";
 import { needsApproval } from "@/lib/chain/config";
+import { summarizeReserves } from "@/lib/platform";
 
 /**
  * These tests model the exact balance moves the migration 0007 escrow functions
@@ -405,5 +406,38 @@ describe("withdrawal approval threshold (rule #6, mirrors withdrawal_request)", 
   it("respects an explicit threshold override", () => {
     expect(needsApproval(50, 25)).toBe(true);
     expect(needsApproval(20, 25)).toBe(false);
+  });
+});
+
+describe("platform ops reserve summary (Phase 8)", () => {
+  it("sums the buckets in exact micros and reconciles a consistent snapshot", () => {
+    const stats = {
+      available: "1000.5",
+      locked: "250",
+      bond: "500",
+      withdraw_locked: "33.333333",
+      platform_fees: "12.25",
+      // What SQL would report — the sums of the above.
+      liabilities: "1783.833333", // 1000.5 + 250 + 500 + 33.333333
+      total_supply: "1796.083333", // + 12.25 fees
+    };
+    const r = summarizeReserves(stats);
+    expect(r.liabilitiesMicros).toBe(toMicros("1783.833333"));
+    expect(r.platformFeesMicros).toBe(toMicros("12.25"));
+    expect(r.totalSupplyMicros).toBe(toMicros("1796.083333"));
+    expect(r.reconciles).toBe(true);
+  });
+
+  it("flags a snapshot whose reported totals don't match the buckets", () => {
+    const stats = {
+      available: "100",
+      locked: "0",
+      bond: "0",
+      withdraw_locked: "0",
+      platform_fees: "0",
+      liabilities: "999", // wrong on purpose
+      total_supply: "999",
+    };
+    expect(summarizeReserves(stats).reconciles).toBe(false);
   });
 });

@@ -43,7 +43,7 @@ export function TradeForm({
     : "bg-sell text-paper hover:opacity-90";
 
   return (
-    <div className="mt-6 rounded-card border border-paper-border bg-paper-raised p-6">
+    <div className="mt-6 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-ink">
           {action} USDT

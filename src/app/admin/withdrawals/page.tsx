@@ -27,7 +27,7 @@ export default async function AdminWithdrawalsPage() {
   return (
     <>
       <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-3xl px-6 py-10">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <h1 className="text-xl font-semibold text-ink">Withdrawal approvals</h1>
         <p className="mt-1 text-sm text-ink-muted">
           Large withdrawals held for manual sign-off. Approving queues it for the
@@ -45,7 +45,7 @@ export default async function AdminWithdrawalsPage() {
                 key={w.id}
                 className="rounded-card border border-paper-border bg-paper-raised px-4 py-3"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <span className="font-amount text-sm text-ink">
                     {formatUsdt(w.amount_usdt)} USDT
                   </span>

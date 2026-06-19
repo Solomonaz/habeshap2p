@@ -46,12 +46,12 @@ export default async function OrderPage({
   return (
     <>
       <SiteHeader phone={user.phone} active="orders" userId={user.id} />
-      <main className="mx-auto max-w-2xl px-6 py-10">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/orders" className="text-sm text-ink-muted hover:text-ink">
           ← All orders
         </Link>
 
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-ink">
               <span className="font-amount">{formatUsdt(order.amount_usdt)}</span>{" "}
@@ -64,14 +64,14 @@ export default async function OrderPage({
           </span>
         </div>
 
-        <section className="mt-6 rounded-card border border-paper-border bg-paper-raised p-6">
+        <section className="mt-6 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
           <h2 className="text-sm font-medium text-ink-muted">Escrow status</h2>
           <div className="mt-4">
             <EscrowRail state={order.state} />
           </div>
         </section>
 
-        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-6">
+        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
           <dl className="space-y-2.5 text-sm">
             <Row label="Amount">
               <span className="font-amount text-ink">

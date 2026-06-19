@@ -7,6 +7,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { resolveDispute } from "@/lib/disputes";
 import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
+import { recordAdminAction } from "@/lib/audit";
 import { DISPUTE_RESOLUTIONS } from "@/types/domain";
 
 const schema = z.object({
@@ -51,6 +52,15 @@ export async function resolveDisputeAction(
     return { error: e instanceof Error ? e.message : "Resolution failed" };
   }
 
+  // Audit the ruling (best-effort; never masks the resolution above).
+  await recordAdminAction({
+    adminId: user.id,
+    action: "dispute_resolve",
+    targetType: "dispute",
+    targetId: parsed.data.disputeId,
+    detail: `resolved ${parsed.data.resolution}`,
+  });
+
   revalidatePath("/admin");
   revalidatePath(`/admin/disputes/${parsed.data.disputeId}`);
   return {};
@@ -93,6 +103,13 @@ export async function approveWithdrawalAction(
     return { error: e instanceof Error ? e.message : "Approval failed" };
   }
 
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_approve",
+    targetType: "withdrawal",
+    targetId: parsed.data.withdrawalId,
+  });
+
   revalidatePath("/admin/withdrawals");
   return {};
 }
@@ -126,6 +143,14 @@ export async function rejectWithdrawalAction(
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Rejection failed" };
   }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_reject",
+    targetType: "withdrawal",
+    targetId: parsed.data.withdrawalId,
+    detail: reason,
+  });
 
   revalidatePath("/admin/withdrawals");
   return {};

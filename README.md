@@ -13,11 +13,13 @@ The platform never touches ETB.
 > (Phase 5), **new-user trade limits + merchant collateral bonds**
 > (Phase 6), and the **on-chain ramp** — deposit addresses, withdrawal requests
 > with an admin-approval threshold, and a server-side signer worker, all behind a
-> swappable chain-provider interface (Phase 7). Trading is live end-to-end: open
-> an order, chat and share proof, release — and when a paid trade goes wrong,
-> either party can freeze the escrow for an admin to rule on. Fresh accounts
-> trade under per-order caps that grow with completed trades; posting a
-> collateral bond lifts the cap entirely.
+> swappable chain-provider interface (Phase 7), and **production hardening + an
+> admin ops console** — append-only audit log, reserve/stats overview, security
+> response headers, and scheduled cron workers (Phase 8). Trading is live
+> end-to-end: open an order, chat and share proof, release — and when a paid
+> trade goes wrong, either party can freeze the escrow for an admin to rule on.
+> Fresh accounts trade under per-order caps that grow with completed trades;
+> posting a collateral bond lifts the cap entirely.
 >
 > **Phase 7 ships on a stub chain provider** so the build and review need no real
 > keys or funds: the full ledger-side deposit/withdrawal flow, state machine, and
@@ -64,7 +66,7 @@ chain provider** (deposit addresses are deterministic fakes, nothing broadcasts)
 
 ## Apply the database migrations
 
-Run the files in `supabase/migrations/` **in order** (0001 → 0012) against your
+Run the files in `supabase/migrations/` **in order** (0001 → 0013) against your
 cloud project. Either:
 
 **A — Supabase CLI** (recommended):
@@ -75,7 +77,7 @@ npx supabase link --project-ref <your-project-ref>
 npx supabase db push
 ```
 
-**B — SQL editor:** paste each file (0001 → 0012) into the dashboard SQL editor
+**B — SQL editor:** paste each file (0001 → 0013) into the dashboard SQL editor
 and run them in sequence.
 
 > **Realtime publications.** Migrations `0008` and `0009` add the `messages` and
@@ -438,6 +440,52 @@ usdt_withdraw_locked + platform_fees` is constant — except deposits raise it
 (mint) and broadcast withdrawals lower it (burn)**, asserted across the new
 withdrawal-hold tests in `tests/orders.test.ts`.
 
+## What Phase 8 adds (production hardening + ops console)
+
+| Area | Files |
+| --- | --- |
+| Append-only admin audit log + `record_admin_action` + `platform_stats` | `supabase/migrations/0013_admin_audit_ops.sql` |
+| Audit service (record + fetch) | `src/lib/audit.ts` |
+| Reserve/stats summariser (pure, testable) + service-role fetch | `src/lib/platform.ts`, `src/lib/ops.ts` |
+| Ops overview console | `src/app/admin/overview/page.tsx` |
+| Security response headers (CSP, HSTS, etc.) | `next.config.ts` |
+| Cron schedules | `vercel.json` |
+| Landing-page polish (trust points + footer) | `src/app/page.tsx` |
+| Reserve-summary reconciliation tests | `tests/orders.test.ts` |
+
+Phase 8 is the capstone: it makes the platform **observable and operable** for an
+admin, hardens the HTTP surface, and schedules the background workers — without
+inventing any paid service.
+
+**Append-only admin audit log.** Every privileged action that moves money or
+state — dispute resolution, withdrawal approve/reject — now also writes an
+immutable row via `record_admin_action` (SECURITY DEFINER, re-checks `is_admin`).
+The `admin_audit_log` table has **no UPDATE or DELETE policy**, so rows can only
+be appended, never altered or erased. Logging is **best-effort**: a failed audit
+write logs an error but never blocks or rolls back the action it records (the
+ledger remains the source of truth for funds).
+
+**Ops overview console (`/admin/overview`).** `platform_stats()` (SECURITY
+DEFINER) sums every wallet bucket and the platform fee account in one round-trip
+and returns amounts as `::text` (no lossy float JSON) plus operational counts
+(users, merchants, active ads, open orders, open disputes, pending withdrawals).
+`summarizeReserves()` is a **pure** function (no `server-only` import, fully
+unit-tested) that re-derives the totals in BigInt micros and sets a
+`reconciles` flag by comparing the SQL-reported `liabilities` / `total_supply`
+against the recomputed sums. The page shows a **red conservation banner** if they
+ever diverge. This is a **self-consistency check, not an on-chain reserve proof.**
+
+**Security response headers.** `next.config.ts` now applies a strict CSP, HSTS
+(2-year `max-age`, `includeSubDomains; preload`), `X-Frame-Options: DENY`,
+`X-Content-Type-Options: nosniff`, a tight `Referrer-Policy`, a
+`Permissions-Policy` that disables camera/mic/geolocation/payment, and
+`X-DNS-Prefetch-Control: off` to every route.
+
+**Scheduled crons.** `vercel.json` schedules the three secret-guarded workers —
+`expire-orders` every 2 min, `poll-deposits` and `process-withdrawals` every
+5 min — so orders expire, deposits credit, and withdrawals broadcast without a
+human hitting the endpoints.
+
 ## Security model (read before touching keys)
 
 - **The hot-wallet private key never lives in the repo or client code.** It is
@@ -478,13 +526,12 @@ Phase-3 specific gaps flagged for later phases:
   ledger-side ramp, but real Tron broadcast needs a real provider configured (see
   *What Phase 7 adds* and the Phase-7 gaps below). Until then the **dev faucet** is
   the only credit path, and it is disabled in production.
-- **Cron must be scheduled externally.** The expiry, deposit-poll, and
-  withdrawal-signer endpoints exist and are secret-guarded, but nothing calls
-  them automatically yet — wire a Vercel Cron (or equivalent) to
-  `GET /api/cron/expire-orders`, `/api/cron/poll-deposits`, and
-  `/api/cron/process-withdrawals` on a short interval in deployment. Until then,
-  unpaid orders only expire, deposits only credit, and withdrawals only broadcast
-  when the endpoints are hit.
+- **Cron is scheduled via `vercel.json` (Phase 8).** The expiry, deposit-poll,
+  and withdrawal-signer endpoints are secret-guarded and now wired to Vercel Cron
+  (`expire-orders` every 2 min; `poll-deposits` + `process-withdrawals` every
+  5 min). On a non-Vercel host you must wire an equivalent scheduler sending
+  `Authorization: Bearer $CRON_SECRET` to the same paths, or those workers never
+  run.
 
 Phase-4 specific gaps flagged for later phases:
 
@@ -566,3 +613,29 @@ Phase-7 specific gaps flagged for later phases:
   `check_function_bodies = off` and is written to apply statement-by-statement.
   Apply it via the SQL editor (or `db push`, which runs statements individually);
   don't paste it inside a manual `BEGIN … COMMIT`.
+
+Phase-8 specific gaps flagged for later:
+
+- **No rate-limiting or error monitoring.** Per-IP/per-user request throttling
+  (OTP requests, withdrawal requests, login attempts) and error/uptime monitoring
+  both want an external service (Upstash/Redis, Sentry, etc.) that costs money and
+  state we deliberately don't provision in the minimum-cost MVP. The hooks are
+  obvious — middleware for throttling, an error boundary + reporter for
+  monitoring — but they're **not built**.
+- **CSP relies on `'unsafe-inline'` and `'unsafe-eval'` for scripts.** Next's
+  hydration bootstrap uses inline scripts, so the script-src is loose. Tightening
+  it to a per-request **nonce** (or hashes) is the follow-up; until then the CSP
+  hardens everything *except* inline-script injection.
+- **The audit log is written from server actions, not DB triggers.** A direct
+  service-role write that bypasses the action layer (e.g. a future script) would
+  move funds without an audit row. Enforcing the log in-database via triggers on
+  the affected tables is the stronger design; for the trusted-admin MVP the
+  action-layer write is accepted.
+- **`reconciles` is a self-consistency check, not a reserve proof.** It confirms
+  the ledger's internal arithmetic is consistent (buckets + fees = reported
+  totals); it does **not** prove the on-chain hot-wallet balance covers internal
+  liabilities. A real proof-of-reserves needs the chain balance read from the
+  provider and compared — deferred with the real Tron provider.
+- **Single hot wallet, still no cold-storage split** (carried from Phase 7): the
+  ops console surfaces total liabilities but there is no automated sweep-to-cold
+  or hot-float top-up.

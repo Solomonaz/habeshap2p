@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/app/actions";
+import { Logo } from "@/components/logo";
 import { OrderNotifications } from "@/components/order-notifications";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin as fetchIsAdmin } from "@/lib/admin";
@@ -12,6 +13,15 @@ const NAV: { href: string; label: string; key: Page }[] = [
   { href: "/market/mine", label: "My ads", key: "mine" },
   { href: "/dashboard", label: "Account", key: "dashboard" },
 ];
+
+/** Pretty-print an E.164-ish Ethiopian number: 251933234567 → +251 93 323 4567. */
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if (d.startsWith("251") && d.length === 12) {
+    return `+251 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
+  }
+  return raw.startsWith("+") ? raw : `+${d}`;
+}
 
 export async function SiteHeader({
   phone,
@@ -37,49 +47,87 @@ export async function SiteHeader({
     : NAV;
 
   return (
-    <header className="border-b border-paper-border bg-paper-raised">
+    <header className="sticky top-0 z-40 border-b border-paper-border/70 bg-paper/80 backdrop-blur-xl">
       {userId && <OrderNotifications userId={userId} />}
-      <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
-        <div className="flex items-center gap-6">
+      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-6">
+        {/* Brand + primary nav */}
+        <div className="flex items-center gap-7">
           <Link
             href="/market"
-            className="text-sm font-semibold uppercase tracking-wide text-ink"
+            aria-label="HabeshaP2P home"
+            className="shrink-0 rounded-md focus-visible:ring-2 focus-visible:ring-amber"
           >
-            HabeshaP2P
+            <Logo />
           </Link>
-          <nav className="flex items-center gap-4">
-            {nav.map((item) => (
-              <Link
-                key={item.key}
-                href={item.href}
-                aria-current={active === item.key ? "page" : undefined}
-                className={
-                  active === item.key
-                    ? "text-sm font-medium text-ink"
-                    : "text-sm text-ink-muted hover:text-ink"
-                }
-              >
-                {item.label}
-              </Link>
-            ))}
+          <nav className="hidden items-center gap-1 md:flex">
+            {nav.map((item) => {
+              const isActive = active === item.key;
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  aria-current={isActive ? "page" : undefined}
+                  className={
+                    "relative rounded-lg px-3 py-2 text-sm font-medium transition-colors " +
+                    (isActive
+                      ? "text-ink"
+                      : "text-ink-muted hover:bg-paper-sunken/60 hover:text-ink")
+                  }
+                >
+                  {item.label}
+                  {isActive && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-amber"
+                    />
+                  )}
+                </Link>
+              );
+            })}
           </nav>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* Account cluster */}
+        <div className="flex items-center gap-2.5">
           {phone && (
-            <span className="hidden font-amount text-xs text-ink-faint sm:inline">
-              {phone}
+            <span className="hidden items-center gap-2 rounded-full border border-paper-border bg-paper-sunken/60 py-1 pl-1 pr-3 sm:inline-flex">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper">
+                {formatPhone(phone).replace(/\D/g, "").slice(-2)}
+              </span>
+              <span className="font-amount text-xs text-ink-soft">
+                {formatPhone(phone)}
+              </span>
             </span>
           )}
           <form action={signOut}>
-            <button
-              type="submit"
-              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
-            >
+            <button type="submit" className="btn-ghost px-3 py-1.5">
               Sign out
             </button>
           </form>
         </div>
       </div>
+
+      {/* Mobile nav (wraps below the bar on small screens) */}
+      <nav className="flex items-center gap-1 overflow-x-auto border-t border-paper-border/60 px-4 py-1.5 md:hidden">
+        {nav.map((item) => {
+          const isActive = active === item.key;
+          return (
+            <Link
+              key={item.key}
+              href={item.href}
+              aria-current={isActive ? "page" : undefined}
+              className={
+                "whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors " +
+                (isActive
+                  ? "bg-paper-sunken text-ink"
+                  : "text-ink-muted hover:text-ink")
+              }
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
     </header>
   );
 }

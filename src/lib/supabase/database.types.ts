@@ -369,6 +369,29 @@ export type Database = {
           },
         ];
       };
+      admin_audit_log: {
+        // Append-only privileged-action trail (migration 0013). Written only by
+        // record_admin_action (service role); admins may read via RLS.
+        Row: {
+          id: string;
+          admin_id: string;
+          action: string;
+          target_type: string | null;
+          target_id: string | null;
+          detail: string | null;
+          created_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "admin_audit_log_admin_id_fkey";
+            columns: ["admin_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       public_profiles: {
@@ -493,6 +516,36 @@ export type Database = {
       withdrawal_mark_confirmed: {
         Args: { p_id: string };
         Returns: undefined;
+      };
+      // ── admin audit log + ops stats (migration 0013) ──
+      record_admin_action: {
+        Args: {
+          p_admin: string;
+          p_action: string;
+          p_target_type?: string | null;
+          p_target_id?: string | null;
+          p_detail?: string | null;
+        };
+        Returns: string; // new audit-log entry id
+      };
+      platform_stats: {
+        Args: Record<string, never>;
+        // jsonb object; all amounts are exact decimal strings, counts are numbers.
+        Returns: {
+          available: string;
+          locked: string;
+          bond: string;
+          withdraw_locked: string;
+          platform_fees: string;
+          liabilities: string;
+          total_supply: string;
+          user_count: number;
+          merchant_count: number;
+          active_ad_count: number;
+          open_order_count: number;
+          open_dispute_count: number;
+          pending_withdrawal_count: number;
+        };
       };
     };
     Enums: {

@@ -15,19 +15,30 @@ const publicSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
 });
 
+/**
+ * An optional secret that may also be present-but-blank in a .env file. A
+ * placeholder line like `TRON_API_KEY=` yields an empty string, not `undefined`,
+ * so a plain `.optional()` would still trip `.min(1)`. We normalize "" → undefined
+ * first so blank placeholders are treated as unset.
+ */
+const optionalSecret = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+  z.string().min(1).optional(),
+);
+
 const serverSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   // Shared secret guarding the cron endpoints. Optional so local dev and the
   // build don't require it; the cron route refuses to run without it set.
-  CRON_SECRET: z.string().min(1).optional(),
+  CRON_SECRET: optionalSecret,
   // ── Phase 7: Tron (TRC-20 USDT) on-chain config. All optional so the build
   // and local dev run on the stub chain provider with no real keys. The real
   // TronGrid/tronweb provider is only constructed when these are present, and
   // the HOT_WALLET_PRIVATE_KEY is read ONLY here on the server (rule #6) — it
   // must never appear in NEXT_PUBLIC_* or reach the client bundle.
-  TRON_API_KEY: z.string().min(1).optional(),
-  TRON_HOT_WALLET_ADDRESS: z.string().min(1).optional(),
-  TRON_HOT_WALLET_PRIVATE_KEY: z.string().min(1).optional(),
+  TRON_API_KEY: optionalSecret,
+  TRON_HOT_WALLET_ADDRESS: optionalSecret,
+  TRON_HOT_WALLET_PRIVATE_KEY: optionalSecret,
 });
 
 function format(error: z.ZodError): string {

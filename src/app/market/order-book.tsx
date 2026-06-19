@@ -83,15 +83,23 @@ export function OrderBook({
     <div>
       {/* ── Tabs + fiat selector ── */}
       <div className="flex items-center justify-between">
-        <div className="inline-flex rounded-full bg-paper-sunken p-1">
-          <TabButton active={tab === "buy"} onClick={() => setTab("buy")}>
+        <div className="inline-flex rounded-xl border border-paper-border bg-paper-sunken/70 p-1">
+          <TabButton
+            tab="buy"
+            active={tab === "buy"}
+            onClick={() => setTab("buy")}
+          >
             Buy
           </TabButton>
-          <TabButton active={tab === "sell"} onClick={() => setTab("sell")}>
+          <TabButton
+            tab="sell"
+            active={tab === "sell"}
+            onClick={() => setTab("sell")}
+          >
             Sell
           </TabButton>
         </div>
-        <span className="flex items-center gap-1.5 rounded-md border border-paper-border bg-paper-raised px-3 py-1.5 text-sm text-ink">
+        <span className="flex items-center gap-1.5 rounded-lg border border-paper-border bg-paper-sunken/60 px-3 py-2 text-sm font-medium text-ink">
           ETB
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
             <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" />
@@ -100,7 +108,7 @@ export function OrderBook({
       </div>
 
       {/* ── Token + filters ── */}
-      <div className="mt-4 flex flex-wrap items-center gap-3 border-b border-paper-border pb-4">
+      <div className="mt-5 flex flex-wrap items-center gap-3 border-b border-paper-border pb-5">
         <span className="flex items-center gap-2 font-semibold text-ink">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-buy text-[11px] font-bold text-paper">
             ₮
@@ -113,12 +121,12 @@ export function OrderBook({
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="Amount (ETB)"
-          className="w-36 rounded-md border border-paper-border bg-paper-raised px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-amber focus:outline-none"
+          className="w-36 rounded-lg border border-paper-border bg-paper-sunken/60 px-3 py-2 text-sm text-ink placeholder:text-ink-faint transition-colors focus:border-amber focus:outline-none"
         />
         <select
           value={method}
           onChange={(e) => setMethod(e.target.value as MethodFilter)}
-          className="rounded-md border border-paper-border bg-paper-raised px-3 py-1.5 text-sm text-ink focus:border-amber focus:outline-none"
+          className="rounded-lg border border-paper-border bg-paper-sunken/60 px-3 py-2 text-sm text-ink transition-colors focus:border-amber focus:outline-none"
         >
           <option value="ALL">All payments</option>
           {PAYMENT_METHODS.map((m) => (
@@ -128,30 +136,41 @@ export function OrderBook({
           ))}
         </select>
         <span
-          className="ml-auto flex items-center gap-1.5 text-xs text-ink-faint"
+          className="ml-auto flex items-center gap-1.5 rounded-full border border-paper-border bg-paper-sunken/50 px-2.5 py-1 text-xs font-medium text-ink-soft"
           aria-live="polite"
         >
-          <span
-            className={
-              "inline-block h-2 w-2 rounded-full " +
-              (live ? "bg-buy" : "bg-ink-faint")
-            }
-            aria-hidden
-          />
+          <span className="relative flex h-2 w-2" aria-hidden>
+            {live && (
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-buy opacity-60" />
+            )}
+            <span
+              className={
+                "relative inline-flex h-2 w-2 rounded-full " +
+                (live ? "bg-buy" : "bg-ink-faint")
+              }
+            />
+          </span>
           {live ? "Live" : "Connecting…"}
         </span>
       </div>
 
       {visible.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-ink-muted">
-          No {tab === "buy" ? "sellers" : "buyers"} match.{" "}
-          <Link href="/market/new" className="text-amber underline">
-            Post an ad
+        <div className="mt-12 flex flex-col items-center gap-3 py-8 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-full border border-paper-border bg-paper-sunken/60 text-ink-faint">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+              <path d="M16 16l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </span>
+          <p className="text-sm text-ink-muted">
+            No {tab === "buy" ? "sellers" : "buyers"} match your filters.
+          </p>
+          <Link href="/market/new" className="text-sm font-medium text-amber hover:text-amber-soft">
+            Post an ad →
           </Link>
-          .
-        </p>
+        </div>
       ) : (
-        <ul className="mt-2 divide-y divide-paper-border">
+        <ul className="mt-4 space-y-3">
           {visible.map((ad) => (
             <AdCard key={ad.id} ad={ad} tab={tab} />
           ))}
@@ -162,21 +181,25 @@ export function OrderBook({
 }
 
 function TabButton({
+  tab,
   active,
   onClick,
   children,
 }: {
+  tab: Tab;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
+  const activeTone =
+    tab === "buy" ? "bg-buy text-paper shadow-sm" : "bg-sell text-white shadow-sm";
   return (
     <button
       onClick={onClick}
       aria-pressed={active}
       className={
-        "rounded-full px-5 py-1.5 text-sm font-semibold transition-colors " +
-        (active ? "bg-ink text-paper" : "text-ink-muted hover:text-ink")
+        "rounded-lg px-6 py-1.5 text-sm font-semibold transition-all duration-150 " +
+        (active ? activeTone : "text-ink-muted hover:text-ink")
       }
     >
       {children}
@@ -193,67 +216,69 @@ function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
   const maxUsdt = rate > 0 ? (Number(ad.max_etb) / rate).toFixed(2) : "0";
 
   return (
-    <li className="py-5">
+    <li className="group rounded-xl border border-paper-border bg-paper-sunken/30 p-5 transition-all duration-150 hover:border-ink-faint/50 hover:bg-paper-sunken/60">
       {/* Trader row */}
       <div className="flex items-center gap-2.5">
         <span
-          className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-paper-raised"
           style={{ backgroundColor: traderColor(ad.user_id) }}
         >
           {traderInitial(ad.user_id)}
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="truncate text-sm font-medium text-ink">
+            <span className="truncate text-sm font-semibold text-ink">
               {handle}
             </span>
             {ad.poster?.is_merchant && (
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="#fcd535"
-                aria-label="Merchant"
+              <span
+                className="flex items-center gap-1 rounded-full bg-amber-wash px-1.5 py-0.5 text-[10px] font-semibold text-amber"
+                title="Verified merchant"
               >
-                <path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" />
-              </svg>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="#fcd535" aria-hidden>
+                  <path d="M12 2l8 3v6c0 5-3.5 8.5-8 11-4.5-2.5-8-6-8-11V5l8-3z" />
+                </svg>
+                Merchant
+              </span>
             )}
           </div>
-          <p className="text-xs text-ink-faint">
+          <p className="mt-0.5 text-xs text-ink-faint">
             {ad.poster
-              ? `Trades ${ad.poster.completed_trades} (${ad.poster.completion_rate}%)`
+              ? `${ad.poster.completed_trades} trades · ${ad.poster.completion_rate}% completion`
               : "New trader"}
           </p>
         </div>
       </div>
 
       {/* Price + button row */}
-      <div className="mt-3 flex items-end justify-between gap-4">
+      <div className="mt-4 flex items-end justify-between gap-4">
         <div className="min-w-0">
           <p className="flex items-baseline gap-1.5">
-            <span className="text-xs text-ink-muted">ETB</span>
             <span
               className={
-                "font-amount text-2xl font-semibold " +
+                "font-amount text-[28px] font-bold leading-none " +
                 (takerBuys ? "text-buy" : "text-sell")
               }
             >
               {formatRate(ad.rate_etb)}
             </span>
+            <span className="text-xs font-medium text-ink-muted">ETB</span>
           </p>
-          <p className="mt-1 text-xs text-ink-faint">
-            <span className="text-ink-muted">Limit</span>{" "}
-            <span className="font-amount">
-              {formatEtb(ad.min_etb)} – {formatEtb(ad.max_etb)} ETB
-            </span>
-          </p>
-          <p className="text-xs text-ink-faint">
-            <span className="text-ink-muted">Quantity</span>{" "}
-            <span className="font-amount">
-              {formatUsdt(minUsdt)} – {formatUsdt(maxUsdt)} USDT
-            </span>
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <div className="mt-3 space-y-1">
+            <p className="text-xs text-ink-faint">
+              <span className="text-ink-muted">Limit</span>{" "}
+              <span className="font-amount text-ink-soft">
+                {formatEtb(ad.min_etb)} – {formatEtb(ad.max_etb)} ETB
+              </span>
+            </p>
+            <p className="text-xs text-ink-faint">
+              <span className="text-ink-muted">Quantity</span>{" "}
+              <span className="font-amount text-ink-soft">
+                {formatUsdt(minUsdt)} – {formatUsdt(maxUsdt)} USDT
+              </span>
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
             {ad.payment_methods.map((m) => (
               <span
                 key={m}
@@ -270,22 +295,22 @@ function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-2.5">
           <span className="flex items-center gap-1 text-xs text-ink-faint">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
               <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
               <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" />
             </svg>
-            15 minutes
+            15 min window
           </span>
           <Link
             href={`/market/trade/${ad.id}`}
             className={
-              "inline-block rounded-md px-6 py-2 text-sm font-semibold text-paper transition-opacity hover:opacity-90 " +
+              "inline-flex items-center gap-1.5 rounded-lg px-7 py-2.5 text-sm font-semibold text-paper shadow-sm transition-all duration-150 hover:brightness-105 active:translate-y-px " +
               (takerBuys ? "bg-buy" : "bg-sell")
             }
           >
-            {takerBuys ? "Buy" : "Sell"}
+            {takerBuys ? "Buy" : "Sell"} USDT
           </Link>
         </div>
       </div>

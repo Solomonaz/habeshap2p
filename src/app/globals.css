@@ -3,10 +3,11 @@
 @tailwind utilities;
 
 :root {
-  /* Font stacks resolved via Tailwind fontFamily tokens. System stacks for now;
-     brand webfonts can be layered in later without touching component code. */
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code",
+  /* Brand typefaces, loaded + self-hosted via next/font (see layout.tsx).
+     Fall back to system stacks if a variable is ever missing. */
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", "Cascadia Code",
     Consolas, monospace;
 }
 
@@ -16,22 +17,90 @@
   }
   body {
     @apply bg-paper text-ink font-sans antialiased;
+    /* Subtle ambient gold glow at the top of the canvas — gives the flat
+       near-black surface depth without competing with content. Fixed so it
+       doesn't scroll away. */
+    background-image:
+      radial-gradient(
+        58rem 34rem at 50% -16rem,
+        rgba(252, 213, 53, 0.07),
+        transparent 70%
+      ),
+      radial-gradient(
+        42rem 30rem at 100% 0%,
+        rgba(14, 203, 129, 0.04),
+        transparent 65%
+      );
+    background-attachment: fixed;
+    background-repeat: no-repeat;
   }
   /* Visible keyboard focus — accessibility is non-negotiable for a money app. */
   :focus-visible {
     @apply outline-none ring-2 ring-amber ring-offset-2 ring-offset-paper;
   }
+  /* Tasteful text selection in brand gold. */
+  ::selection {
+    background: rgba(252, 213, 53, 0.28);
+    color: #fff;
+  }
+  /* Dark, slim scrollbars to match the theme (WebKit + Firefox). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2b3139 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #2b3139;
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #3a424d;
+    background-clip: padding-box;
+  }
 }
 
-/* Respect reduced-motion globally. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+@layer components {
+  /* Primary action — brand gold with a soft glow and tactile press. */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2
+      text-sm font-semibold text-paper transition-[filter,transform] duration-150;
+    background-image: linear-gradient(180deg, #fcd535 0%, #f0b90b 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      0 8px 24px -10px rgba(240, 185, 11, 0.65);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.06);
+  }
+  .btn-primary:active {
+    transform: translateY(0.5px);
+    filter: brightness(0.98);
+  }
+
+  /* Secondary / ghost action. */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border
+      border-paper-border bg-paper-sunken/60 px-3.5 py-2 text-sm font-medium
+      text-ink-soft transition-colors duration-150 hover:border-ink-faint
+      hover:text-ink;
+  }
+
+  /* Elevated content surface — the standard container for panels/cards. */
+  .panel {
+    @apply rounded-2xl border border-paper-border bg-paper-raised;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.03),
+      0 26px 60px -34px rgba(0, 0, 0, 0.85);
+  }
+
+  /* Interactive row/card hover treatment. */
+  .surface-hover {
+    @apply transition-colors duration-150 hover:bg-paper-sunken/50;
   }
 }
 

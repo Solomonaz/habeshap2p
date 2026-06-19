@@ -37,7 +37,7 @@ export default async function TradePage({
   return (
     <>
       <SiteHeader phone={user.phone} active="market" userId={user.id} />
-      <main className="mx-auto max-w-xl px-6 py-10">
+      <main className="mx-auto max-w-xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/market" className="text-sm text-ink-muted hover:text-ink">
           ← Back to order book
         </Link>

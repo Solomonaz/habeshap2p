@@ -24,15 +24,23 @@ export default async function AdminPage() {
   return (
     <>
       <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-3xl px-6 py-10">
-        <div className="flex items-center justify-between">
+      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-ink">Dispute queue</h1>
-          <Link
-            href="/admin/withdrawals"
-            className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
-          >
-            Withdrawal approvals
-          </Link>
+          <nav className="flex gap-2">
+            <Link
+              href="/admin/overview"
+              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
+            >
+              Ops overview
+            </Link>
+            <Link
+              href="/admin/withdrawals"
+              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
+            >
+              Withdrawal approvals
+            </Link>
+          </nav>
         </div>
         <p className="mt-1 text-sm text-ink-muted">
           Frozen orders awaiting a ruling. Review the chat and payment proof,

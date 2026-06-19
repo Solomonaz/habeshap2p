@@ -36,12 +36,12 @@ export default async function AdminDisputePage({
   return (
     <>
       <SiteHeader phone={user.phone} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-2xl px-6 py-10">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
           ← Dispute queue
         </Link>
 
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-semibold text-ink">
             <span className="font-amount">{formatUsdt(order.amount_usdt)}</span>{" "}
             USDT in dispute
@@ -52,7 +52,7 @@ export default async function AdminDisputePage({
         </div>
 
         {/* The claim */}
-        <section className="mt-6 rounded-card border border-paper-border bg-paper-raised p-6">
+        <section className="mt-6 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
           <h2 className="text-sm font-medium text-ink-muted">
             Dispute opened by{" "}
             {dispute.opened_by === order.buyer_id ? "the buyer" : "the seller"}
@@ -63,7 +63,7 @@ export default async function AdminDisputePage({
         </section>
 
         {/* Order facts the ruling turns on */}
-        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-6">
+        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
           <dl className="space-y-2.5 text-sm">
             <Row label="Amount">
               <span className="font-amount text-ink">
@@ -102,7 +102,7 @@ export default async function AdminDisputePage({
         </section>
 
         {/* Evidence: the immutable chat transcript + proof images */}
-        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-6">
+        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5 sm:p-6">
           <h2 className="text-sm font-medium text-ink-muted">
             Chat &amp; payment proof
           </h2>

@@ -66,7 +66,7 @@ export default async function DashboardPage() {
   return (
     <>
       <SiteHeader phone={user.phone} active="dashboard" userId={user.id} />
-      <main className="mx-auto max-w-2xl px-6 py-12">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="text-xl font-semibold text-ink">Account</h1>
 
       <section className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -173,7 +173,7 @@ export default async function DashboardPage() {
                 key={w.id}
                 className="rounded-md border border-paper-border bg-paper px-3 py-2.5"
               >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <span className="font-amount text-sm text-ink">
                     {formatUsdt(w.amount_usdt)} USDT
                   </span>
