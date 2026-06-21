@@ -4,6 +4,7 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 import { toMicros } from "@/lib/money";
 import { getChainProvider, WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
+import { isValidTronAddress } from "@/lib/chain/address";
 
 export type WithdrawalRow = Database["public"]["Tables"]["withdrawals"]["Row"];
 
@@ -35,6 +36,12 @@ export async function requestWithdrawal(args: {
 }): Promise<string> {
   if (toMicros(args.amount) <= 0n) {
     throw new Error("withdrawal amount must be positive");
+  }
+  // Reject malformed destinations up front so funds are never held for a payout
+  // that can only fail at signing time. Full base58check validation (not just
+  // the "T…34 chars" shape) so stub/look-alike addresses are caught here.
+  if (!isValidTronAddress(args.toAddress)) {
+    throw new Error("enter a valid Tron (TRC-20) address");
   }
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("withdrawal_request", {
@@ -124,7 +131,7 @@ export type WithdrawalProcessResult = {
  */
 export async function processApprovedWithdrawals(): Promise<WithdrawalProcessResult> {
   const supabase = createAdminSupabase();
-  const provider = getChainProvider();
+  const provider = await getChainProvider();
 
   const { data: approved, error } = await supabase
     .from("withdrawals")

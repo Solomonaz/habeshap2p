@@ -413,6 +413,27 @@ export type Database = {
           },
         ];
       };
+      platform_settings: {
+        // Singleton (id = true) runtime switch (migration 0018). Admins read it
+        // (RLS) to render the toggle; only set_live_payments writes it. The
+        // service role reads it server-side to pick the chain provider.
+        Row: {
+          id: boolean;
+          live_payments: boolean;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "platform_settings_updated_by_fkey";
+            columns: ["updated_by"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       kyc_submissions: {
         // Identity-verification attempts (migration 0015). Written only by the
         // kyc_submit/approve/reject RPCs; users read their own, admins read all.
@@ -594,6 +615,11 @@ export type Database = {
           p_detail?: string | null;
         };
         Returns: string; // new audit-log entry id
+      };
+      // ── platform settings: live-payments switch (migration 0018) ──
+      set_live_payments: {
+        Args: { p_admin: string; p_enabled: boolean };
+        Returns: boolean; // the value now in effect
       };
       platform_stats: {
         Args: Record<string, never>;

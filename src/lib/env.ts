@@ -50,6 +50,15 @@ const serverSchema = z.object({
   TRON_API_KEY: optionalSecret,
   TRON_HOT_WALLET_ADDRESS: optionalSecret,
   TRON_HOT_WALLET_PRIVATE_KEY: optionalSecret,
+  // BIP-39 mnemonic the real provider derives per-user deposit addresses from
+  // (BIP-44 Tron path m/44'/195'/0'/0/<index>). SECRET — server-side only. The
+  // hot wallet controls these addresses; an operator sweeper consolidates
+  // received funds to the hot wallet so withdrawals have liquidity.
+  TRON_DEPOSIT_MNEMONIC: optionalSecret,
+  // TRC-20 USDT contract address. Optional override; defaults per network in the
+  // chain provider (mainnet USDT). Set this explicitly on a testnet whose USDT
+  // contract differs from the built-in default.
+  TRON_USDT_CONTRACT: optionalSecret,
   // ── Telegram auth ── Bot token from @BotFather, used SERVER-SIDE only to
   // verify the HMAC signature on Login Widget callbacks (and to derive the
   // per-user session password). Optional so the build/dev run without it; the
@@ -97,6 +106,8 @@ export function getServerEnv() {
     TRON_API_KEY: process.env.TRON_API_KEY,
     TRON_HOT_WALLET_ADDRESS: process.env.TRON_HOT_WALLET_ADDRESS,
     TRON_HOT_WALLET_PRIVATE_KEY: process.env.TRON_HOT_WALLET_PRIVATE_KEY,
+    TRON_DEPOSIT_MNEMONIC: process.env.TRON_DEPOSIT_MNEMONIC,
+    TRON_USDT_CONTRACT: process.env.TRON_USDT_CONTRACT,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   });
   if (!parsed.success) {
@@ -105,4 +116,20 @@ export function getServerEnv() {
     );
   }
   return parsed.data;
+}
+
+/**
+ * Is the real Tron chain provider fully configured? LIVE mode requires the API
+ * key, the hot wallet (address + signing key), and the deposit-address mnemonic.
+ * Used to (a) refuse to flip live payments on until the secrets exist and (b)
+ * pick the real provider over the stub. Server-only.
+ */
+export function isTronConfigured(): boolean {
+  const env = getServerEnv();
+  return Boolean(
+    env.TRON_API_KEY &&
+      env.TRON_HOT_WALLET_ADDRESS &&
+      env.TRON_HOT_WALLET_PRIVATE_KEY &&
+      env.TRON_DEPOSIT_MNEMONIC,
+  );
 }

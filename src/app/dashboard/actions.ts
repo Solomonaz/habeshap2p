@@ -6,6 +6,7 @@ import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server
 import { toMicros } from "@/lib/money";
 import { postBond, releaseBond } from "@/lib/merchant";
 import { requestWithdrawal } from "@/lib/withdrawals";
+import { isLivePaymentsEnabled } from "@/lib/settings";
 
 export type MerchantState = { error?: string };
 
@@ -18,11 +19,17 @@ export type WithdrawState = { error?: string; ok?: boolean };
  * only path to a credit is a confirmed on-chain deposit.
  *
  * RISK FLAG: this mints balance out of thin air. It MUST never ship enabled.
- * The NODE_ENV check is the gate; there is no UI for it in production builds.
+ * TWO gates: it is hard-blocked in production builds (NODE_ENV), AND it is
+ * blocked whenever the admin has switched the platform to LIVE payments mode
+ * (migration 0018) — in LIVE mode the only credit path is a confirmed on-chain
+ * deposit, never a mint.
  */
 export async function devFaucet(formData: FormData): Promise<void> {
   if (process.env.NODE_ENV === "production") {
     throw new Error("faucet is disabled in production");
+  }
+  if (await isLivePaymentsEnabled()) {
+    throw new Error("faucet is disabled while live payments mode is on");
   }
 
   const supabase = await createServerSupabase();

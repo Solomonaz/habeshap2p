@@ -47,6 +47,12 @@ export default async function AdminPage() {
             >
               Verifications
             </Link>
+            <Link
+              href="/admin/settings"
+              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
+            >
+              Settings
+            </Link>
           </nav>
         </div>
         <p className="mt-1 text-sm text-ink-muted">

@@ -33,7 +33,8 @@ export async function ensureDepositAddress(
   if (error) throw new Error(`failed to load wallet: ${error.message}`);
   if (wallet?.deposit_address) return wallet.deposit_address;
 
-  const address = await getChainProvider().deriveDepositAddress(userId);
+  const provider = await getChainProvider();
+  const address = await provider.deriveDepositAddress(userId);
   const admin = createAdminSupabase();
   const { data, error: rpcErr } = await admin.rpc("wallet_set_deposit_address", {
     p_user: userId,
@@ -72,7 +73,8 @@ export async function pollDeposits(): Promise<DepositPollResult> {
   const byAddress = new Map<string, string>();
   for (const w of rows) byAddress.set(w.deposit_address, w.user_id);
 
-  const transfers = await getChainProvider().fetchIncomingTransfers([
+  const provider = await getChainProvider();
+  const transfers = await provider.fetchIncomingTransfers([
     ...byAddress.keys(),
   ]);
 

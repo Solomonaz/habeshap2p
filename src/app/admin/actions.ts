@@ -9,6 +9,8 @@ import { resolveDispute } from "@/lib/disputes";
 import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
 import { approveKyc, rejectKyc } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
+import { setLivePayments } from "@/lib/settings";
+import { isTronConfigured } from "@/lib/env";
 import { DISPUTE_RESOLUTIONS } from "@/types/domain";
 
 const schema = z.object({
@@ -155,6 +157,67 @@ export async function rejectWithdrawalAction(
 
   revalidatePath("/admin/withdrawals");
   return {};
+}
+
+const paymentsModeSchema = z.object({
+  // Checkbox/hidden field: "on" → go live, anything else → test mode.
+  enabled: z.enum(["true", "false"]),
+});
+
+export type PaymentsModeState = { error?: string; ok?: boolean };
+
+/**
+ * Flip the platform between TEST (dev faucet + stub chain) and LIVE (real
+ * on-chain money) mode. Same triple authorization as every other admin action
+ * (route guard, re-check here, and the SQL `set_live_payments` re-checks
+ * is_admin). Enabling LIVE additionally refuses unless the Tron secrets are
+ * configured — so an admin can never strand the platform in a live mode whose
+ * provider can't actually move money.
+ */
+export async function setPaymentsModeAction(
+  _prev: PaymentsModeState,
+  formData: FormData,
+): Promise<PaymentsModeState> {
+  const parsed = paymentsModeSchema.safeParse({
+    enabled: formData.get("enabled"),
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+  const enabling = parsed.data.enabled === "true";
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  if (enabling && !isTronConfigured()) {
+    return {
+      error:
+        "Can't enable live payments: the Tron provider isn't configured. Set " +
+        "TRON_API_KEY, TRON_HOT_WALLET_ADDRESS, TRON_HOT_WALLET_PRIVATE_KEY and " +
+        "TRON_DEPOSIT_MNEMONIC on the server first.",
+    };
+  }
+
+  try {
+    await setLivePayments(user.id, enabling);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not change mode" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "payments_mode_set",
+    targetType: "platform_settings",
+    detail: enabling ? "live payments ENABLED" : "live payments DISABLED",
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/dashboard");
+  return { ok: true };
 }
 
 const kycSchema = z.object({

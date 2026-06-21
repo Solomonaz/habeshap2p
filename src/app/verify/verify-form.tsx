@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { submitVerification } from "./actions";
 
 const KYC_BUCKET = "kyc";
-const MAX_BYTES = 8 * 1024 * 1024; // 8 MB per image
+// const MAX_BYTES = 8 * 1024 * 1024; // 8 MB per image
 
 /**
  * Uploads the two images straight to the private `kyc` bucket from the browser
@@ -60,10 +60,10 @@ export function VerifyForm({
       setError("Please take your liveness selfie with the camera.");
       return;
     }
-    if (idDoc.size > MAX_BYTES || liveness.size > MAX_BYTES) {
-      setError("Each image must be under 8 MB.");
-      return;
-    }
+    // if (idDoc.size > MAX_BYTES || liveness.size > MAX_BYTES) {
+    //   setError("Each image must be under 8 MB.");
+    //   return;
+    // }
 
     setBusy(true);
     try {

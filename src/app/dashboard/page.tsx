@@ -10,6 +10,7 @@ import {
 } from "@/lib/chain";
 import { ensureDepositAddress } from "@/lib/deposits";
 import { fetchWithdrawalsForUser } from "@/lib/withdrawals";
+import { isLivePaymentsEnabled } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import Link from "next/link";
@@ -61,6 +62,10 @@ export default async function DashboardPage() {
   // withdrawals (both run server-side; the read is RLS-scoped to this user).
   const depositAddress = await ensureDepositAddress(supabase, user.id);
   const withdrawals = await fetchWithdrawalsForUser(supabase, user.id);
+
+  // The admin's runtime switch (migration 0018). In TEST mode the dev faucet is
+  // offered; in LIVE mode it's replaced by the real on-chain deposit flow.
+  const livePayments = await isLivePaymentsEnabled();
 
   const isMerchant = profile?.is_merchant ?? false;
   const completedTrades = profile?.completed_trades ?? 0;
@@ -146,7 +151,7 @@ export default async function DashboardPage() {
         available={available}
       />
 
-      {process.env.NODE_ENV !== "production" && (
+      {!livePayments && process.env.NODE_ENV !== "production" && (
         <section className="mt-4 rounded-card border border-amber/40 bg-amber-wash p-5">
           <h2 className="text-sm font-medium text-amber">Dev faucet</h2>
           <p className="mt-1 text-xs text-ink-faint">
@@ -209,9 +214,11 @@ export default async function DashboardPage() {
                     {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
                   </span>
                 </div>
-                <p className="mt-1 break-all font-amount text-xs text-ink-faint">
-                  → {w.to_address}
-                </p>
+                {w.status !== "PENDING_APPROVAL" && (
+                  <p className="mt-1 break-all font-amount text-xs text-ink-faint">
+                    → {w.to_address}
+                  </p>
+                )}
                 {w.tx_hash && (
                   <p className="break-all font-amount text-xs text-ink-faint">
                     tx {w.tx_hash}
