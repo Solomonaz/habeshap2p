@@ -26,6 +26,29 @@ export type IncomingTransfer = {
 
 export type SendResult = { txHash: string };
 
+/** On-chain balances of an address, as exact decimal strings (never floats). */
+export type AccountBalances = {
+  /** Native TRX balance (pays for energy/bandwidth). */
+  trx: string;
+  /** TRC-20 USDT balance. */
+  usdt: string;
+};
+
+/** Hot-wallet reserve snapshot for the ops console. */
+export type HotWalletReserve = AccountBalances & { address: string };
+
+/**
+ * Result of attempting to sweep one deposit address into the hot wallet:
+ *   swept   — USDT was forwarded to the hot wallet (txHash + amount).
+ *   gassed  — the address held USDT but lacked the TRX to move it, so we sent it
+ *             gas this run; it'll be swept on a later run once the gas confirms.
+ *   skipped — nothing to do (no USDT, or below the dust floor).
+ */
+export type SweepOutcome =
+  | { status: "swept"; txHash: string; amountUsdt: string }
+  | { status: "gassed"; txHash: string }
+  | { status: "skipped" };
+
 export interface ChainProvider {
   readonly network: TronNetwork;
 
@@ -51,4 +74,20 @@ export interface ChainProvider {
 
   /** Whether a previously broadcast tx has reached confirmation. */
   isConfirmed(txHash: string): Promise<boolean>;
+
+  /**
+   * Current hot-wallet reserve (TRX for gas + USDT float) for the ops console
+   * and low-balance monitoring. Read-only.
+   */
+  getHotWalletBalances(): Promise<HotWalletReserve>;
+
+  /**
+   * Consolidate one per-user deposit address into the hot wallet (the "sweeper").
+   * Deposits land at derived addresses but withdrawals pay from the hot wallet,
+   * so received USDT must be forwarded there to keep payout liquidity. Derives
+   * the address's key from the deposit mnemonic, tops up gas from the hot wallet
+   * when needed, and forwards the full USDT balance. Never touches the internal
+   * ledger — the user was already credited at deposit time.
+   */
+  sweepDepositAddress(userId: string, fromAddress: string): Promise<SweepOutcome>;
 }

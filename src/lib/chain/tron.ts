@@ -5,8 +5,10 @@ import type { TronNetwork } from "./config";
 import { DEPOSIT_MIN_CONFIRMATIONS } from "./config";
 import type {
   ChainProvider,
+  HotWalletReserve,
   IncomingTransfer,
   SendResult,
+  SweepOutcome,
 } from "./provider";
 
 /**
@@ -45,6 +47,16 @@ const DEFAULT_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
 /** BIP-44 coin type for Tron. */
 const TRON_DERIVATION_PREFIX = "m/44'/195'/0'/0/";
+
+/**
+ * A USDT TRC-20 transfer costs ~13–30 TRX of energy when the sender has no
+ * staked energy (the common case for throwaway deposit addresses). If a deposit
+ * address holds USDT but less than this much TRX, the sweeper tops it up from
+ * the hot wallet first and forwards the USDT on the next run once gas confirms.
+ */
+const SWEEP_GAS_THRESHOLD_SUN = 30_000_000n; // 30 TRX (sun = micro-TRX)
+/** How much TRX to send when topping up gas — a little above the threshold. */
+const SWEEP_GAS_TOPUP_SUN = 35_000_000n; // 35 TRX
 
 export type TronProviderConfig = {
   network: TronNetwork;
@@ -211,6 +223,94 @@ export class TronGridChainProvider implements ChainProvider {
     return confs >= DEPOSIT_MIN_CONFIRMATIONS;
   }
 
+  /**
+   * On-chain TRX + USDT balances of an address as exact decimal strings. TRX is
+   * 6-decimal (sun = micro-TRX) and USDT is 6-decimal, so both reuse the money
+   * helper.
+   *
+   * IMPORTANT: USDT is read from CONTRACT STATE (balanceOf), not TronGrid's
+   * /v1/accounts indexer. Deposit addresses normally hold 0 TRX (that's why the
+   * sweeper gas-tops-them-up), which means they are *unactivated* accounts — and
+   * TronGrid's account API returns no record (data: []) for an unactivated
+   * address even when it holds TRC-20 tokens. Reading balanceOf directly avoids
+   * that blind spot, so the sweeper never skips an address that actually holds
+   * USDT. trx.getBalance works for unactivated accounts too (returns 0).
+   */
+  private async readBalances(address: string): Promise<{
+    trx: string;
+    usdt: string;
+  }> {
+    const tronWeb = await this.getSigner();
+    const contract = await tronWeb.contract().at(this.usdtContract);
+    const rawUsdt = await contract.balanceOf(address).call();
+    const usdtMicros = BigInt(rawUsdt.toString());
+    const sun = await tronWeb.trx.getBalance(address);
+    const trxSun = BigInt(Math.trunc(Number(sun)));
+    return { trx: fromMicros(trxSun), usdt: fromMicros(usdtMicros) };
+  }
+
+  async getHotWalletBalances(): Promise<HotWalletReserve> {
+    const balances = await this.readBalances(this.hotWalletAddress);
+    return { address: this.hotWalletAddress, ...balances };
+  }
+
+  /**
+   * Consolidate one per-user deposit address into the hot wallet. Reads the
+   * address's USDT; if it has none, nothing to do. If it has USDT but too little
+   * TRX to pay for the transfer's energy, it sends gas from the hot wallet this
+   * run and forwards the USDT on a later run (once the gas confirms). Otherwise
+   * it derives the address's key from the deposit mnemonic and forwards the full
+   * USDT balance to the hot wallet. Never touches the internal ledger.
+   */
+  async sweepDepositAddress(
+    userId: string,
+    fromAddress: string,
+  ): Promise<SweepOutcome> {
+    const { trx, usdt } = await this.readBalances(fromAddress);
+    const usdtMicros = toMicros(usdt);
+    if (usdtMicros <= 0n) return { status: "skipped" };
+
+    // Not enough TRX to pay for the transfer's energy — gas it up this run and
+    // sweep on the next one once the top-up confirms.
+    if (toMicros(trx) < SWEEP_GAS_THRESHOLD_SUN) {
+      const hot = await this.getSigner();
+      const topup = await hot.trx.sendTransaction(
+        fromAddress,
+        Number(SWEEP_GAS_TOPUP_SUN),
+      );
+      const txHash =
+        topup.txid ?? topup.transaction?.txID ?? "";
+      if (!txHash) throw new Error("gas top-up returned no tx hash");
+      return { status: "gassed", txHash };
+    }
+
+    // Derive the deposit address's own key so we can sign the outbound transfer.
+    const TronWeb = await this.loadTronWeb();
+    const path = `${TRON_DERIVATION_PREFIX}${addressIndex(userId)}`;
+    const derived = TronWeb.fromMnemonic(this.depositMnemonic, path);
+    if (derived.address !== fromAddress) {
+      // The stored address doesn't match what the mnemonic derives for this user
+      // — refuse rather than risk signing for the wrong account.
+      throw new Error(
+        `derived address mismatch for user (expected ${fromAddress})`,
+      );
+    }
+
+    const depositKey = derived.privateKey.replace(/^0x/, "");
+    const Ctor = this.TronWebCtor as TronWebClass;
+    const depositWeb = new Ctor({
+      fullHost: this.host,
+      headers: { "TRON-PRO-API-KEY": this.apiKey },
+      privateKey: depositKey,
+    });
+    const contract = await depositWeb.contract().at(this.usdtContract);
+    const txHash: string = await contract
+      .transfer(this.hotWalletAddress, usdtMicros.toString())
+      .send({ from: fromAddress });
+    if (!txHash) throw new Error("sweep transfer returned no tx hash");
+    return { status: "swept", txHash, amountUsdt: usdt };
+  }
+
   /** Current head block number. */
   private async currentBlock(): Promise<number> {
     const block = await this.api<TronGridBlock>("/wallet/getnowblock");
@@ -250,7 +350,17 @@ type TronWebInstance = {
       transfer: (to: string, amount: string) => {
         send: (opts: { from: string }) => Promise<string>;
       };
+      balanceOf: (address: string) => {
+        call: () => Promise<{ toString: () => string }>;
+      };
     }>;
+  };
+  trx: {
+    getBalance: (address: string) => Promise<number>;
+    sendTransaction: (
+      to: string,
+      amountSun: number,
+    ) => Promise<{ txid?: string; transaction?: { txID?: string } }>;
   };
 };
 type TronWebClass = {
@@ -259,7 +369,10 @@ type TronWebClass = {
     headers: Record<string, string>;
     privateKey: string;
   }): TronWebInstance;
-  fromMnemonic: (mnemonic: string, path: string) => { address: string };
+  fromMnemonic: (
+    mnemonic: string,
+    path: string,
+  ) => { address: string; privateKey: string };
 };
 type TronGridTrc20Response = {
   data?: {

@@ -2,11 +2,17 @@ import "server-only";
 import { getServerEnv } from "@/lib/env";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import { TRON_NETWORK } from "./config";
-import type { ChainProvider } from "./provider";
+import type { ChainProvider, HotWalletReserve } from "./provider";
 import { StubChainProvider } from "./stub";
 import { TronGridChainProvider } from "./tron";
 
-export type { ChainProvider, IncomingTransfer, SendResult } from "./provider";
+export type {
+  ChainProvider,
+  IncomingTransfer,
+  SendResult,
+  HotWalletReserve,
+  SweepOutcome,
+} from "./provider";
 export {
   TRON_NETWORK,
   TRON_NETWORK_LABEL,
@@ -63,4 +69,30 @@ function getLiveProvider(): ChainProvider {
     depositMnemonic: env.TRON_DEPOSIT_MNEMONIC,
     usdtContract: env.TRON_USDT_CONTRACT,
   }));
+}
+
+/**
+ * Hot-wallet reserve snapshot for the ops console. Returns the live on-chain TRX
+ * + USDT balances when live payments are on, or a neutral "test mode" marker
+ * otherwise. Never throws — a TronGrid hiccup surfaces as an error string so the
+ * page still renders the rest of the dashboard.
+ */
+export async function fetchHotWalletReserve(): Promise<{
+  live: boolean;
+  reserve: HotWalletReserve | null;
+  error: string | null;
+}> {
+  if (!(await isLivePaymentsEnabled())) {
+    return { live: false, reserve: null, error: null };
+  }
+  try {
+    const reserve = await getLiveProvider().getHotWalletBalances();
+    return { live: true, reserve, error: null };
+  } catch (err) {
+    return {
+      live: true,
+      reserve: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }

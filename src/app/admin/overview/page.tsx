@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { fetchPlatformStats } from "@/lib/ops";
 import { fetchRecentAdminActions } from "@/lib/audit";
+import { fetchHotWalletReserve } from "@/lib/chain";
 import { summarizeReserves } from "@/lib/platform";
 import { formatUsdt } from "@/lib/money";
 import { traderHandle } from "@/lib/handle";
@@ -25,9 +26,10 @@ export default async function AdminOverviewPage() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) redirect("/market");
 
-  const [stats, actions] = await Promise.all([
+  const [stats, actions, hotWallet] = await Promise.all([
     fetchPlatformStats(),
     fetchRecentAdminActions(50),
+    fetchHotWalletReserve(),
   ]);
   const reserves = summarizeReserves(stats);
 
@@ -98,6 +100,51 @@ export default async function AdminOverviewPage() {
               ? "✓ Buckets reconcile (recomputed in exact micros)."
               : "⚠ Bucket totals do NOT reconcile — investigate immediately."}
           </p>
+        </section>
+
+        {/* Hot-wallet reserve — the on-chain float that backs withdrawals. */}
+        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-ink">Hot wallet reserve</h2>
+            {hotWallet.live ? (
+              hotWallet.reserve ? (
+                <code className="text-xs text-ink-faint">
+                  {hotWallet.reserve.address.slice(0, 8)}…
+                  {hotWallet.reserve.address.slice(-6)}
+                </code>
+              ) : null
+            ) : (
+              <span className="rounded-full bg-paper-sunken px-2 py-0.5 text-xs text-ink-faint">
+                test mode
+              </span>
+            )}
+          </div>
+
+          {!hotWallet.live ? (
+            <p className="mt-2 text-xs text-ink-muted">
+              Live payments are off — no on-chain hot wallet to report. Turn live
+              payments on in the admin console to see the real reserve.
+            </p>
+          ) : hotWallet.error ? (
+            <p className="mt-2 text-xs text-sell">
+              Couldn’t read the hot wallet: {hotWallet.error}
+            </p>
+          ) : (
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-sm text-ink-muted">USDT float</p>
+                <p className="mt-1 font-amount text-xl text-ink">
+                  {formatUsdt(hotWallet.reserve!.usdt)} USDT
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-ink-muted">TRX for gas</p>
+                <p className="mt-1 font-amount text-xl text-ink">
+                  {formatUsdt(hotWallet.reserve!.trx)} TRX
+                </p>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="mt-4 grid gap-3 sm:grid-cols-2">

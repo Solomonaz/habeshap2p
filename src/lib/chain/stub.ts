@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import type { TronNetwork } from "./config";
 import type {
   ChainProvider,
+  HotWalletReserve,
   IncomingTransfer,
   SendResult,
+  SweepOutcome,
 } from "./provider";
 
 /**
@@ -64,5 +66,19 @@ export class StubChainProvider implements ChainProvider {
   async isConfirmed(_txHash: string): Promise<boolean> {
     // Treat anything broadcast by the stub as immediately confirmed in dev.
     return true;
+  }
+
+  async getHotWalletBalances(): Promise<HotWalletReserve> {
+    // No real hot wallet under the stub — report zeros so the ops console can
+    // render a neutral "test mode" state without special-casing.
+    return { address: "(stub — no hot wallet)", trx: "0", usdt: "0" };
+  }
+
+  async sweepDepositAddress(
+    _userId: string,
+    _fromAddress: string,
+  ): Promise<SweepOutcome> {
+    // No chain to sweep in test mode.
+    return { status: "skipped" };
   }
 }
