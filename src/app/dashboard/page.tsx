@@ -10,7 +10,7 @@ import {
 } from "@/lib/chain";
 import { ensureDepositAddress } from "@/lib/deposits";
 import { fetchWithdrawalsForUser } from "@/lib/withdrawals";
-import { isLivePaymentsEnabled } from "@/lib/settings";
+import { isLivePaymentsEnabled, getTradePolicy } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import Link from "next/link";
@@ -65,12 +65,16 @@ export default async function DashboardPage() {
 
   // The admin's runtime switch (migration 0018). In TEST mode the dev faucet is
   // offered; in LIVE mode it's replaced by the real on-chain deposit flow.
-  const livePayments = await isLivePaymentsEnabled();
+  // The trade policy (migration 0021) drives the tier/limit/bond figures shown.
+  const [livePayments, tradePolicy] = await Promise.all([
+    isLivePaymentsEnabled(),
+    getTradePolicy(),
+  ]);
 
   const isMerchant = profile?.is_merchant ?? false;
   const completedTrades = profile?.completed_trades ?? 0;
-  const tier = reputationTier({ isMerchant, completedTrades });
-  const tradeLimit = tradeLimitUsdt({ isMerchant, completedTrades });
+  const tier = reputationTier({ isMerchant, completedTrades }, tradePolicy);
+  const tradeLimit = tradeLimitUsdt({ isMerchant, completedTrades }, tradePolicy);
   const kycStatus = profile?.kyc_status ?? "UNVERIFIED";
 
   return (
@@ -149,6 +153,7 @@ export default async function DashboardPage() {
         tradeLimit={tradeLimit}
         bond={bond}
         available={available}
+        minBond={tradePolicy.minMerchantBond}
       />
 
       {!livePayments && process.env.NODE_ENV !== "production" && (

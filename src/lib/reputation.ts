@@ -12,8 +12,38 @@
  * fine — these limits are not balances.
  */
 
-/** Minimum bond (USDT) to hold merchant status — mirrors merchant_post_bond. */
-export const MIN_MERCHANT_BOND = 500;
+/**
+ * The admin-configurable trade policy (migration 0021): the merchant-bond
+ * minimum, the three per-order caps, and the completed-trade thresholds that
+ * promote a user between tiers. A cap of `null` means "unlimited" for that tier
+ * (merchants are always unlimited regardless). Mirrors the columns on the
+ * platform_settings singleton; the AUTHORITATIVE values live in SQL.
+ */
+export type TradePolicy = {
+  minMerchantBond: number;
+  newCap: number | null;
+  activeCap: number | null;
+  establishedCap: number | null;
+  activeAfter: number;
+  establishedAfter: number;
+};
+
+/**
+ * The built-in defaults — identical to the hardcoded values before 0021, and
+ * to the SQL column defaults. Used when no live policy is supplied (tests, and
+ * the fail-safe fallback if a settings read hiccups).
+ */
+export const DEFAULT_TRADE_POLICY: TradePolicy = {
+  minMerchantBond: 500,
+  newCap: 100,
+  activeCap: 1000,
+  establishedCap: 10000,
+  activeAfter: 1,
+  establishedAfter: 10,
+};
+
+/** @deprecated Use the live policy's `minMerchantBond`. Kept as the default. */
+export const MIN_MERCHANT_BOND = DEFAULT_TRADE_POLICY.minMerchantBond;
 
 export type ReputationTier = "MERCHANT" | "ESTABLISHED" | "ACTIVE" | "NEW";
 
@@ -23,31 +53,31 @@ export type ReputationInputs = {
 };
 
 /**
- * The per-order USDT cap for a user. `null` means unlimited (a bonded
- * merchant). Mirrors `_trade_limit_usdt` exactly:
- *   merchant              -> unlimited (null)
- *   >= 10 completed trades -> 10,000
- *   >=  1 completed trade  ->  1,000
- *   brand-new (0 trades)   ->    100
+ * The per-order USDT cap for a user. `null` means unlimited (a bonded merchant,
+ * or a tier the admin set to unlimited). Mirrors `_trade_limit_usdt`:
+ *   merchant                         -> unlimited (null)
+ *   >= establishedAfter trades        -> establishedCap
+ *   >= activeAfter trades             -> activeCap
+ *   brand-new                         -> newCap
  */
-export function tradeLimitUsdt({
-  isMerchant,
-  completedTrades,
-}: ReputationInputs): number | null {
+export function tradeLimitUsdt(
+  { isMerchant, completedTrades }: ReputationInputs,
+  policy: TradePolicy = DEFAULT_TRADE_POLICY,
+): number | null {
   if (isMerchant) return null;
-  if (completedTrades >= 10) return 10000;
-  if (completedTrades >= 1) return 1000;
-  return 100;
+  if (completedTrades >= policy.establishedAfter) return policy.establishedCap;
+  if (completedTrades >= policy.activeAfter) return policy.activeCap;
+  return policy.newCap;
 }
 
 /** A human-facing tier label derived from the same inputs as the limit. */
-export function reputationTier({
-  isMerchant,
-  completedTrades,
-}: ReputationInputs): ReputationTier {
+export function reputationTier(
+  { isMerchant, completedTrades }: ReputationInputs,
+  policy: TradePolicy = DEFAULT_TRADE_POLICY,
+): ReputationTier {
   if (isMerchant) return "MERCHANT";
-  if (completedTrades >= 10) return "ESTABLISHED";
-  if (completedTrades >= 1) return "ACTIVE";
+  if (completedTrades >= policy.establishedAfter) return "ESTABLISHED";
+  if (completedTrades >= policy.activeAfter) return "ACTIVE";
   return "NEW";
 }
 

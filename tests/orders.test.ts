@@ -320,6 +320,28 @@ describe("trade limits + reputation tiers (mirrors _trade_limit_usdt)", () => {
       "MERCHANT",
     );
   });
+
+  it("honours an admin-configured policy (custom caps + thresholds)", () => {
+    // Admin sets: new 50, active 5,000 after 3 trades, established unlimited
+    // after 20 trades.
+    const policy = {
+      minMerchantBond: 1000,
+      newCap: 50,
+      activeCap: 5000,
+      establishedCap: null,
+      activeAfter: 3,
+      establishedAfter: 20,
+    };
+    // below the active threshold -> new cap
+    expect(tradeLimitUsdt({ isMerchant: false, completedTrades: 2 }, policy)).toBe(50);
+    expect(reputationTier({ isMerchant: false, completedTrades: 2 }, policy)).toBe("NEW");
+    // at/above active threshold -> active cap
+    expect(tradeLimitUsdt({ isMerchant: false, completedTrades: 3 }, policy)).toBe(5000);
+    expect(reputationTier({ isMerchant: false, completedTrades: 19 }, policy)).toBe("ACTIVE");
+    // at/above established threshold -> unlimited (null cap)
+    expect(tradeLimitUsdt({ isMerchant: false, completedTrades: 20 }, policy)).toBeNull();
+    expect(reputationTier({ isMerchant: false, completedTrades: 20 }, policy)).toBe("ESTABLISHED");
+  });
 });
 
 describe("withdrawal hold (migration 0012)", () => {

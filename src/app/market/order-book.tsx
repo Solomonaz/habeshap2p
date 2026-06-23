@@ -19,9 +19,11 @@ type MethodFilter = "ALL" | PaymentMethod;
 export function OrderBook({
   initialAds,
   currentUserId,
+  paymentWindowMinutes,
 }: {
   initialAds: AdWithPoster[];
   currentUserId: string;
+  paymentWindowMinutes: number;
 }) {
   const [ads, setAds] = useState<AdWithPoster[]>(initialAds);
   const [tab, setTab] = useState<Tab>("buy");
@@ -172,7 +174,12 @@ export function OrderBook({
       ) : (
         <ul className="mt-4 space-y-3">
           {visible.map((ad) => (
-            <AdCard key={ad.id} ad={ad} tab={tab} />
+            <AdCard
+              key={ad.id}
+              ad={ad}
+              tab={tab}
+              paymentWindowMinutes={paymentWindowMinutes}
+            />
           ))}
         </ul>
       )}
@@ -207,7 +214,15 @@ function TabButton({
   );
 }
 
-function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
+function AdCard({
+  ad,
+  tab,
+  paymentWindowMinutes,
+}: {
+  ad: AdWithPoster;
+  tab: Tab;
+  paymentWindowMinutes: number;
+}) {
   const takerBuys = tab === "buy";
   const name = traderName(ad.poster?.full_name, ad.user_id);
   const verified = ad.poster?.is_verified ?? false;
@@ -314,7 +329,7 @@ function AdCard({ ad, tab }: { ad: AdWithPoster; tab: Tab }) {
               <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
               <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="2" />
             </svg>
-            15 min window
+            {paymentWindowMinutes} min window
           </span>
           <Link
             href={`/market/trade/${ad.id}`}

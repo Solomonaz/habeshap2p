@@ -3,7 +3,6 @@
 import { useActionState } from "react";
 import { formatUsdt } from "@/lib/money";
 import {
-  MIN_MERCHANT_BOND,
   formatTradeLimit,
   tierLabel,
   type ReputationTier,
@@ -26,12 +25,14 @@ export function MerchantBond({
   tradeLimit,
   bond,
   available,
+  minBond,
 }: {
   isMerchant: boolean;
   tier: ReputationTier;
   tradeLimit: number | null;
   bond: string;
   available: string;
+  minBond: number;
 }) {
   const [postState, postAction, posting] = useActionState<
     MerchantState,
@@ -100,10 +101,10 @@ export function MerchantBond({
         <form action={postAction} className="mt-4">
           <p className="text-xs text-ink-faint">
             Lock at least{" "}
-            <span className="font-amount text-ink">{MIN_MERCHANT_BOND} USDT</span>{" "}
-            as collateral to become a merchant and trade without per-order
-            limits. The bond stays yours — it&apos;s held in escrow and released
-            when you step down.
+            <span className="font-amount text-ink">{minBond} USDT</span> as
+            collateral to become a merchant and trade without per-order limits.
+            The bond stays yours — it&apos;s held in escrow and released when you
+            step down.
           </p>
           {postState.error && (
             <p
@@ -117,7 +118,7 @@ export function MerchantBond({
             <input
               type="text"
               name="amount"
-              defaultValue={String(MIN_MERCHANT_BOND)}
+              defaultValue={String(minBond)}
               inputMode="decimal"
               className="w-32 rounded-md border border-paper-border bg-paper px-3 py-1.5 font-amount text-sm text-ink focus:border-buy focus:outline-none"
             />

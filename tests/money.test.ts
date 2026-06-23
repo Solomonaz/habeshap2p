@@ -5,6 +5,7 @@ import {
   addMicros,
   subMicros,
   takerFeeMicros,
+  feeMicrosClamped,
   splitRelease,
   takerFee,
   formatUsdt,
@@ -96,6 +97,49 @@ describe("takerFeeMicros (0.25%, half-up)", () => {
   it("honours a custom bps", () => {
     expect(takerFeeMicros(toMicros("100"), 0n)).toBe(0n);
     expect(takerFeeMicros(toMicros("100"), 100n)).toBe(toMicros("1")); // 1%
+  });
+});
+
+describe("feeMicrosClamped (admin fee with min/max band)", () => {
+  it("applies the plain percentage when inside the band", () => {
+    // 100 USDT @ 1% = 1 USDT, no floor, no cap
+    expect(feeMicrosClamped(toMicros("100"), 100n)).toBe(toMicros("1"));
+  });
+
+  it("disables the fee at 0 bps", () => {
+    expect(feeMicrosClamped(toMicros("100"), 0n)).toBe(0n);
+    // even a non-zero floor only bites when there's a fee? No — min is a floor
+    // that applies regardless, matching the SQL. 0 bps + 0.5 min => 0.5.
+    expect(feeMicrosClamped(toMicros("100"), 0n, toMicros("0.5"))).toBe(
+      toMicros("0.5"),
+    );
+  });
+
+  it("floors at the minimum fee", () => {
+    // 10 USDT @ 0.25% = 0.025, but min is 0.5 -> 0.5
+    expect(
+      feeMicrosClamped(toMicros("10"), 25n, toMicros("0.5")),
+    ).toBe(toMicros("0.5"));
+  });
+
+  it("caps at the maximum fee", () => {
+    // 10000 USDT @ 1% = 100, but max is 5 -> 5
+    expect(
+      feeMicrosClamped(toMicros("10000"), 100n, 0n, toMicros("5")),
+    ).toBe(toMicros("5"));
+  });
+
+  it("never exceeds the trade amount even with a huge floor", () => {
+    // tiny 0.1 USDT trade, min fee 1 USDT -> fee clamps down to the amount
+    expect(feeMicrosClamped(toMicros("0.1"), 25n, toMicros("1"))).toBe(
+      toMicros("0.1"),
+    );
+  });
+
+  it("keeps net non-negative (fee + net = amount)", () => {
+    const amount = toMicros("0.1");
+    const fee = feeMicrosClamped(amount, 25n, toMicros("1"));
+    expect(amount - fee).toBeGreaterThanOrEqual(0n);
   });
 });
 

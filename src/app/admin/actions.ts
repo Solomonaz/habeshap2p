@@ -9,8 +9,14 @@ import { resolveDispute } from "@/lib/disputes";
 import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
 import { approveKyc, rejectKyc } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
-import { setLivePayments } from "@/lib/settings";
+import {
+  setLivePayments,
+  setPlatformFee,
+  setTradePolicy,
+  setOrderTtlMinutes,
+} from "@/lib/settings";
 import { isTronConfigured } from "@/lib/env";
+import { toMicros } from "@/lib/money";
 import { DISPUTE_RESOLUTIONS } from "@/types/domain";
 
 const schema = z.object({
@@ -217,6 +223,270 @@ export async function setPaymentsModeAction(
 
   revalidatePath("/admin/settings");
   revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// The admin enters the fee as a PERCENTAGE (e.g. "1" = 1%, "0.25" = 0.25%),
+// which is the natural mental model; we convert to basis points for storage.
+// Min/max are optional USDT amounts; blank means "no floor" / "no cap".
+const PERCENT_RE = /^\d+(\.\d+)?$/;
+const feeSchema = z.object({
+  percent: z
+    .string()
+    .trim()
+    .refine((s) => PERCENT_RE.test(s), "Enter a percentage like 0.25 or 1")
+    .refine((s) => Number(s) >= 0 && Number(s) <= 100, "Fee must be 0–100%"),
+  min: z.string().trim().optional(),
+  max: z.string().trim().optional(),
+});
+
+export type FeeState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the per-trade commission fee (migration 0020). The fee is a
+ * percentage of each released trade, clamped to an optional [min, max] USDT
+ * band; 0% disables it. Same triple authorization as every other admin action
+ * (route guard, re-check here, and the SQL `set_platform_fee` re-checks
+ * is_admin). The percentage is converted to basis points (1% = 100 bps) with
+ * exact integer math so 0.01% resolution is preserved with no float drift.
+ */
+export async function setPlatformFeeAction(
+  _prev: FeeState,
+  formData: FormData,
+): Promise<FeeState> {
+  const parsed = feeSchema.safeParse({
+    percent: formData.get("percent") ?? "",
+    min: formData.get("min") ?? "",
+    max: formData.get("max") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  // percent → bps via exact integer micros (percent has ≤4 dp → bps integer).
+  // toMicros(percent) yields percent×1e6; ×100 (bps per percent) / 1e6 = bps.
+  let bps: number;
+  let minStr = "0";
+  let maxStr: string | null = null;
+  try {
+    const bpsMicros = toMicros(parsed.data.percent) * 100n;
+    if (bpsMicros % 1_000_000n !== 0n) {
+      return { error: "Fee percentage is too precise (max 0.01% steps)" };
+    }
+    bps = Number(bpsMicros / 1_000_000n);
+
+    if (parsed.data.min) {
+      minStr = parsed.data.min;
+      toMicros(minStr); // validate it parses as USDT
+    }
+    if (parsed.data.max) {
+      maxStr = parsed.data.max;
+      if (toMicros(maxStr) < toMicros(minStr)) {
+        return { error: "Maximum fee can't be less than the minimum fee" };
+      }
+    }
+  } catch {
+    return { error: "Min/max must be valid USDT amounts (max 6 decimals)" };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setPlatformFee(user.id, { bps, min: minStr, max: maxStr });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not set the fee" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "platform_fee_set",
+    targetType: "platform_settings",
+    detail:
+      `fee ${parsed.data.percent}% (${bps} bps)` +
+      `, min ${minStr}` +
+      (maxStr ? `, max ${maxStr}` : ", no cap"),
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+// Trade-policy inputs. Caps are optional USDT amounts where blank = "unlimited";
+// the bond minimum is required and positive; tier thresholds are whole numbers.
+const AMOUNT_RE = /^\d+(\.\d+)?$/;
+const tradePolicySchema = z.object({
+  minBond: z
+    .string()
+    .trim()
+    .refine((s) => AMOUNT_RE.test(s) && Number(s) > 0, "Enter a positive bond minimum"),
+  newCap: z.string().trim().optional(),
+  activeCap: z.string().trim().optional(),
+  establishedCap: z.string().trim().optional(),
+  activeAfter: z
+    .string()
+    .trim()
+    .refine((s) => /^\d+$/.test(s) && Number(s) >= 1, "Active tier needs ≥ 1 trade"),
+  establishedAfter: z
+    .string()
+    .trim()
+    .refine((s) => /^\d+$/.test(s) && Number(s) >= 1, "Established tier needs ≥ 1 trade"),
+});
+
+export type TradePolicyState = { error?: string; ok?: boolean };
+
+/**
+ * Admin tunes the per-order trade limits and the merchant-bond minimum
+ * (migration 0021). Caps left blank mean "unlimited" for that tier. Same triple
+ * authorization as every other admin action (route guard, re-check here, and the
+ * SQL `set_trade_policy` re-checks is_admin and validates the band).
+ */
+export async function setTradePolicyAction(
+  _prev: TradePolicyState,
+  formData: FormData,
+): Promise<TradePolicyState> {
+  const parsed = tradePolicySchema.safeParse({
+    minBond: formData.get("minBond") ?? "",
+    newCap: formData.get("newCap") ?? "",
+    activeCap: formData.get("activeCap") ?? "",
+    establishedCap: formData.get("establishedCap") ?? "",
+    activeAfter: formData.get("activeAfter") ?? "",
+    establishedAfter: formData.get("establishedAfter") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  // A blank cap → null (unlimited); a present cap must be a valid USDT amount.
+  const cap = (raw: string | undefined): number | null => {
+    const s = (raw ?? "").trim();
+    if (s === "") return null;
+    toMicros(s); // throws on bad shape / too many decimals
+    return Number(s);
+  };
+
+  let newCap: number | null;
+  let activeCap: number | null;
+  let establishedCap: number | null;
+  try {
+    newCap = cap(parsed.data.newCap);
+    activeCap = cap(parsed.data.activeCap);
+    establishedCap = cap(parsed.data.establishedCap);
+  } catch {
+    return { error: "Trade limits must be valid USDT amounts (max 6 decimals)" };
+  }
+
+  const activeAfter = Number(parsed.data.activeAfter);
+  const establishedAfter = Number(parsed.data.establishedAfter);
+  if (establishedAfter < activeAfter) {
+    return {
+      error: "Established tier can't require fewer trades than the active tier",
+    };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setTradePolicy(user.id, {
+      minMerchantBond: Number(parsed.data.minBond),
+      newCap,
+      activeCap,
+      establishedCap,
+      activeAfter,
+      establishedAfter,
+    });
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the trade policy",
+    };
+  }
+
+  const fmtCap = (c: number | null) => (c === null ? "∞" : String(c));
+  await recordAdminAction({
+    adminId: user.id,
+    action: "trade_policy_set",
+    targetType: "platform_settings",
+    detail:
+      `bond ≥ ${parsed.data.minBond}; caps new ${fmtCap(newCap)} / ` +
+      `active ${fmtCap(activeCap)} (≥${activeAfter}) / ` +
+      `established ${fmtCap(establishedCap)} (≥${establishedAfter})`,
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
+// The order payment window, in whole minutes (≥ 1). This is how long a buyer has
+// to pay before an unpaid order is eligible for auto-cancel.
+const orderTtlSchema = z.object({
+  minutes: z
+    .string()
+    .trim()
+    .refine((s) => /^\d+$/.test(s) && Number(s) >= 1, "Window must be ≥ 1 minute")
+    .refine((s) => Number(s) <= 1440, "Window can't exceed 1440 minutes (24h)"),
+});
+
+export type OrderTtlState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the order payment window (migration 0022) — the minutes a buyer has
+ * to pay before an unpaid order is auto-cancelled. Same triple authorization as
+ * every other admin action (route guard, re-check here, and the SQL
+ * `set_order_ttl` re-checks is_admin). order_create reads this live, so the new
+ * window applies to every order opened after the change.
+ */
+export async function setOrderTtlAction(
+  _prev: OrderTtlState,
+  formData: FormData,
+): Promise<OrderTtlState> {
+  const parsed = orderTtlSchema.safeParse({
+    minutes: formData.get("minutes") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+  const minutes = Number(parsed.data.minutes);
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setOrderTtlMinutes(user.id, minutes);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the payment window",
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "order_ttl_set",
+    targetType: "platform_settings",
+    detail: `order payment window ${minutes} min`,
+  });
+
+  revalidatePath("/admin/settings");
+  revalidatePath("/market");
   return { ok: true };
 }
 

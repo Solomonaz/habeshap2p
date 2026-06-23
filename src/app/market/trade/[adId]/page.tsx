@@ -4,6 +4,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchAd } from "@/lib/ads";
 import { fetchKycStatus } from "@/lib/kyc";
 import { tradeLimitUsdt } from "@/lib/reputation";
+import { getTradePolicy } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import { TradeForm } from "./trade-form";
@@ -25,21 +26,25 @@ export default async function TradePage({
     redirect("/verify");
   }
 
-  const [ad, { data: profile }] = await Promise.all([
+  const [ad, { data: profile }, tradePolicy] = await Promise.all([
     fetchAd(supabase, adId),
     supabase
       .from("users")
       .select("is_merchant, completed_trades")
       .eq("id", user.id)
       .single(),
+    getTradePolicy(),
   ]);
 
   // The taker's per-order cap (rule #5). SQL enforces it on both parties; we
   // surface the taker's so they see it before submitting. null = unlimited.
-  const takerLimit = tradeLimitUsdt({
-    isMerchant: profile?.is_merchant ?? false,
-    completedTrades: profile?.completed_trades ?? 0,
-  });
+  const takerLimit = tradeLimitUsdt(
+    {
+      isMerchant: profile?.is_merchant ?? false,
+      completedTrades: profile?.completed_trades ?? 0,
+    },
+    tradePolicy,
+  );
 
   return (
     <>

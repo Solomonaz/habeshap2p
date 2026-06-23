@@ -420,6 +420,22 @@ export type Database = {
         Row: {
           id: boolean;
           live_payments: boolean;
+          // Admin-configurable taker fee (migration 0020). fee_bps in basis
+          // points (0 disables); the min/max clamp is in USDT (max null = no cap).
+          fee_bps: number;
+          fee_min_usdt: string;
+          fee_max_usdt: string | null;
+          // Admin-configurable trade limits + merchant bond (migration 0021).
+          // Cap columns null = unlimited for that tier.
+          min_merchant_bond: number;
+          trade_limit_new: number | null;
+          trade_limit_active: number | null;
+          trade_limit_established: number | null;
+          tier_active_trades: number;
+          tier_established_trades: number;
+          // Admin-configurable order payment window (migration 0022). Minutes a
+          // CREATED order may sit unpaid before it is eligible for auto-cancel.
+          order_ttl_minutes: number;
           updated_by: string | null;
           updated_at: string;
         };
@@ -512,7 +528,15 @@ export type Database = {
         Returns: undefined;
       };
       order_release: {
-        Args: { p_order: string; p_actor: string; p_fee_bps?: number };
+        // p_fee_bps/min/max are optional overrides; when omitted the configured
+        // admin fee (platform_settings, migration 0020) is read and applied.
+        Args: {
+          p_order: string;
+          p_actor: string;
+          p_fee_bps?: number;
+          p_fee_min?: string;
+          p_fee_max?: string;
+        };
         Returns: undefined;
       };
       order_cancel: {
@@ -620,6 +644,34 @@ export type Database = {
       set_live_payments: {
         Args: { p_admin: string; p_enabled: boolean };
         Returns: boolean; // the value now in effect
+      };
+      // ── admin-configurable taker fee (migration 0020) ──
+      set_platform_fee: {
+        Args: {
+          p_admin: string;
+          p_fee_bps: number;
+          p_fee_min?: string;
+          p_fee_max?: string | null;
+        };
+        Returns: number; // the bps value now in effect
+      };
+      // ── admin-configurable trade limits + bond (migration 0021) ──
+      set_trade_policy: {
+        Args: {
+          p_admin: string;
+          p_min_bond: string;
+          p_limit_new: string | null;
+          p_limit_active: string | null;
+          p_limit_established: string | null;
+          p_active_trades: number;
+          p_established_trades: number;
+        };
+        Returns: undefined;
+      };
+      // ── admin-configurable order payment window (migration 0022) ──
+      set_order_ttl: {
+        Args: { p_admin: string; p_minutes: number };
+        Returns: undefined;
       };
       platform_stats: {
         Args: Record<string, never>;

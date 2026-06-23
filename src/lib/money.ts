@@ -100,6 +100,29 @@ export function takerFeeMicros(
 }
 
 /**
+ * Taker fee with the admin-configured [min, max] clamp applied, in micros.
+ * Mirrors the SQL in migration 0020's `order_release` exactly: percentage fee
+ * (half-up), floored at `minMicros`, capped at `maxMicros` (null = no cap), and
+ * never allowed to exceed the trade amount itself. Use for UI previews so the
+ * displayed fee matches what the database will actually charge.
+ */
+export function feeMicrosClamped(
+  amountMicros: bigint,
+  bps: bigint,
+  minMicros: bigint = 0n,
+  maxMicros: bigint | null = null,
+): bigint {
+  if (amountMicros < 0n) throw new Error("amount must be non-negative");
+  if (bps < 0n) throw new Error("bps must be non-negative");
+  if (minMicros < 0n) throw new Error("min fee must be non-negative");
+  let fee = takerFeeMicros(amountMicros, bps);
+  if (fee < minMicros) fee = minMicros;
+  if (maxMicros !== null && fee > maxMicros) fee = maxMicros;
+  if (fee > amountMicros) fee = amountMicros;
+  return fee;
+}
+
+/**
  * Split a release amount into the platform fee and the net the buyer receives.
  * Guarantees feeMicros + netMicros === amountMicros (conservation).
  */

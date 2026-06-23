@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { fetchActiveAds } from "@/lib/ads";
+import { getOrderTtlMinutes } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import { OrderBook } from "./order-book";
@@ -17,7 +18,10 @@ export default async function MarketPage() {
 
   // Initial server render uses the RLS-bound session client; the order book
   // then keeps itself live over Realtime from the browser.
-  const initialAds = await fetchActiveAds(supabase);
+  const [initialAds, paymentWindowMinutes] = await Promise.all([
+    fetchActiveAds(supabase),
+    getOrderTtlMinutes(),
+  ]);
 
   return (
     <>
@@ -47,7 +51,11 @@ export default async function MarketPage() {
         </div>
 
         <div className="panel mt-7 p-5 sm:p-6">
-          <OrderBook initialAds={initialAds} currentUserId={user.id} />
+          <OrderBook
+            initialAds={initialAds}
+            currentUserId={user.id}
+            paymentWindowMinutes={paymentWindowMinutes}
+          />
         </div>
       </main>
     </>
