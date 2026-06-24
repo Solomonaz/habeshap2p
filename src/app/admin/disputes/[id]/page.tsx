@@ -3,12 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { fetchDisputeDetailForAdmin } from "@/lib/disputes";
-import { SiteHeader } from "@/components/site-header";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { traderHandle } from "@/lib/handle";
-import { accountLabel } from "@/lib/identity";
 import { AdminResolve } from "./admin-resolve";
 import { ReinstateAccount } from "../../accounts/reinstate";
 
@@ -38,9 +36,7 @@ export default async function AdminDisputePage({
   const resolved = dispute.status === "RESOLVED";
 
   return (
-    <>
-      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
+    <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
         <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
           ← Dispute queue
         </Link>
@@ -193,8 +189,7 @@ export default async function AdminDisputePage({
             />
           )}
         </section>
-      </main>
-    </>
+    </main>
   );
 }
 

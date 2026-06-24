@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
@@ -8,8 +7,6 @@ import { fetchHotWalletReserve } from "@/lib/chain";
 import { summarizeReserves } from "@/lib/platform";
 import { formatUsdt } from "@/lib/money";
 import { traderHandle } from "@/lib/handle";
-import { SiteHeader } from "@/components/site-header";
-import { accountLabel } from "@/lib/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -49,26 +46,10 @@ export default async function AdminOverviewPage() {
   ];
 
   return (
-    <>
-      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-ink">Ops overview</h1>
-          <nav className="flex gap-2">
-            <Link
-              href="/admin"
-              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
-            >
-              Disputes
-            </Link>
-            <Link
-              href="/admin/withdrawals"
-              className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft hover:bg-paper-sunken"
-            >
-              Withdrawals
-            </Link>
-          </nav>
-        </div>
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        <h1 className="text-2xl font-bold tracking-tight text-ink">
+          Ops overview
+        </h1>
 
         {/* Conservation banner — the headline trust number. */}
         <section
@@ -202,7 +183,6 @@ export default async function AdminOverviewPage() {
             </ul>
           )}
         </section>
-      </main>
-    </>
+    </main>
   );
 }

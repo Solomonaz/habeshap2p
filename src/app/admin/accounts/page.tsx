@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { fetchModeratedAccounts } from "@/lib/accounts";
-import { SiteHeader } from "@/components/site-header";
-import { accountLabel } from "@/lib/identity";
 import { traderHandle } from "@/lib/handle";
 import { ReinstateAccount } from "./reinstate";
 
@@ -23,13 +21,10 @@ export default async function AdminAccountsPage() {
   const banned = accounts.filter((a) => a.accountStatus === "BANNED");
 
   return (
-    <>
-      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
-          ← Dispute queue
-        </Link>
-        <h1 className="mt-4 text-xl font-semibold text-ink">Moderated accounts</h1>
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        <h1 className="text-2xl font-bold tracking-tight text-ink">
+          Moderated accounts
+        </h1>
         <p className="mt-1 text-sm text-ink-muted">
           Sellers frozen for missing a release window, and accounts permanently
           banned. Open the case to review the chat and proof. A banned account can
@@ -47,8 +42,7 @@ export default async function AdminAccountsPage() {
           empty="No banned accounts."
           accounts={banned}
         />
-      </main>
-    </>
+    </main>
   );
 }
 

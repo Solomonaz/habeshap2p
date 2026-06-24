@@ -3,8 +3,6 @@ import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server
 import { isAdmin } from "@/lib/admin";
 import { fetchPendingKyc, signedKycUrl } from "@/lib/kyc";
 import { traderHandle } from "@/lib/handle";
-import { SiteHeader } from "@/components/site-header";
-import { accountLabel } from "@/lib/identity";
 import { KycReview } from "./review";
 
 export const dynamic = "force-dynamic";
@@ -37,10 +35,10 @@ export default async function AdminKycPage() {
   );
 
   return (
-    <>
-      <SiteHeader account={accountLabel(user)} active="admin" userId={user.id} isAdmin />
-      <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <h1 className="text-xl font-semibold text-ink">Identity verification</h1>
+    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        <h1 className="text-2xl font-bold tracking-tight text-ink">
+          Identity verification
+        </h1>
         <p className="mt-1 text-sm text-ink-muted">
           Check that the liveness selfie matches the ID photo and that the name on
           the ID matches the attested name. Approving unlocks trading for the user.
@@ -109,7 +107,6 @@ export default async function AdminKycPage() {
             ))}
           </ul>
         )}
-      </main>
-    </>
+    </main>
   );
 }

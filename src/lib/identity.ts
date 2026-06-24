@@ -13,6 +13,48 @@ function initialsFrom(label: string): string {
   return cleaned.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Turn an email into a name-like label when no real name is on file, so the UI
+ * shows "Solomon Az1921" rather than a raw "solomon.az1921@gmail.com". Splits the
+ * local part on separators and capitalises each word. A real `full_name` (when
+ * present) always wins over this — see {@link accountIdentity}.
+ */
+function nameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  const words = local
+    .split(/[._\-+]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.join(" ") || email;
+}
+
+/** Initials from a person's name: "Solomon Alemu" → "SA"; "Solomon" → "SO". */
+export function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const [first, second] = parts;
+  if (first && second) {
+    return (first.charAt(0) + second.charAt(0)).toUpperCase();
+  }
+  return name.trim().slice(0, 2).toUpperCase();
+}
+
+/**
+ * Account identity that prefers the profile's real name over the login handle.
+ * `fullName` comes from the `users` table; when present (and non-blank) it wins
+ * over the email/phone/Telegram label so the UI greets people by name. Falls
+ * back to {@link accountLabel} otherwise.
+ */
+export function accountIdentity(
+  user: User | null | undefined,
+  fullName?: string | null,
+): AccountIdentity {
+  const trimmed = fullName?.trim();
+  if (trimmed) {
+    return { label: trimmed, initials: initialsFromName(trimmed) };
+  }
+  return accountLabel(user);
+}
+
 export function accountLabel(user: User | null | undefined): AccountIdentity {
   if (!user) return { label: "Account", initials: "··" };
 
@@ -26,7 +68,8 @@ export function accountLabel(user: User | null | undefined): AccountIdentity {
 
   // Telegram synthetic emails are tg<id>@telegram.local — don't show those.
   if (user.email && !user.email.endsWith("@telegram.local")) {
-    return { label: user.email, initials: initialsFrom(user.email) };
+    const name = nameFromEmail(user.email);
+    return { label: name, initials: initialsFromName(name) };
   }
 
   if (user.phone) {

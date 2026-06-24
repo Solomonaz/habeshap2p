@@ -102,6 +102,59 @@
   .surface-hover {
     @apply transition-colors duration-150 hover:bg-paper-sunken/50;
   }
+
+  /* Loading shimmer — used by the route-level skeletons. A soft sheen sweeps
+     across a graphite block so a loading screen reads as "working", not frozen. */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: #1e2329;
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent 0,
+      rgba(255, 255, 255, 0.06) 20%,
+      rgba(255, 255, 255, 0.1) 60%,
+      transparent 100%
+    );
+    animation: skeleton-sweep 1.4s ease-in-out infinite;
+  }
+  @keyframes skeleton-sweep {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      animation: none;
+    }
+  }
+
+  /* A gentle entrance for content that streams in after a skeleton — keeps the
+     swap from snapping. Respects reduced-motion. */
+  .animate-rise {
+    animation: rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-rise {
+      animation: none;
+    }
+  }
 }
 
 /* Monetary amounts: monospace + tabular figures so columns of numbers align. */

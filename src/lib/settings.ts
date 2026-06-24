@@ -1,6 +1,76 @@
 import "server-only";
+import { cache } from "react";
+import { unstable_cache, revalidateTag } from "next/cache";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { DEFAULT_TRADE_POLICY, type TradePolicy } from "@/lib/reputation";
+
+/**
+ * `platform_settings` is a single-row table read by almost every page (the live
+ * flag, the fee, the trade policy, the order window). Reading each field with a
+ * separate query meant 2-4 network round-trips per render to the same one row —
+ * a meaningful slice of page latency.
+ *
+ * This loader reads the whole row ONCE and the typed getters below derive their
+ * values from it. Two layers of caching:
+ *   • `unstable_cache` — shares the result across requests/users for 30s, so the
+ *     row is fetched at most ~twice a minute platform-wide instead of per page.
+ *     Settings change rarely (admin action), and the money-critical math reads
+ *     settings directly in the SQL RPCs (order_release/order_create), not here —
+ *     these getters drive UI + provider selection, where 30s staleness is fine.
+ *   • `cache` (React) — dedupes within a single render so multiple getters on one
+ *     page collapse to a single underlying call.
+ *
+ * Returns the raw row or null; the getters apply fail-safe defaults so a missing
+ * table (pre-migration) or read error degrades to TEST-mode defaults, never an
+ * unsafe state.
+ */
+type SettingsRow = {
+  live_payments: boolean | null;
+  fee_bps: number | null;
+  fee_min_usdt: string | null;
+  fee_max_usdt: string | null;
+  min_merchant_bond: string | null;
+  trade_limit_new: string | null;
+  trade_limit_active: string | null;
+  trade_limit_established: string | null;
+  tier_active_trades: number | null;
+  tier_established_trades: number | null;
+  order_ttl_minutes: number | null;
+};
+
+const SETTINGS_COLUMNS =
+  "live_payments, fee_bps, fee_min_usdt, fee_max_usdt, min_merchant_bond, " +
+  "trade_limit_new, trade_limit_active, trade_limit_established, " +
+  "tier_active_trades, tier_established_trades, order_ttl_minutes";
+
+const loadSettingsRow = unstable_cache(
+  async (): Promise<SettingsRow | null> => {
+    const admin = createAdminSupabase();
+    const { data, error } = await admin
+      .from("platform_settings")
+      .select(SETTINGS_COLUMNS)
+      .eq("id", true)
+      .maybeSingle();
+    if (error) {
+      // Before migration 0018 the table doesn't exist — a normal pre-migration
+      // state, not a fault (PostgREST reports PGRST205). Stay quiet for that;
+      // log anything else. Either way the caller falls back to safe defaults.
+      const missingTable =
+        error.code === "PGRST205" ||
+        /platform_settings/.test(error.message ?? "");
+      if (!missingTable) {
+        console.error(`[settings] failed to read settings row: ${error.message}`);
+      }
+      return null;
+    }
+    return (data as SettingsRow | null) ?? null;
+  },
+  ["platform-settings-row"],
+  { revalidate: 30, tags: ["platform-settings"] },
+);
+
+/** Per-request memo over the cross-request cache (belt-and-braces dedupe). */
+const getSettingsRow = cache(loadSettingsRow);
 
 /**
  * Platform runtime settings (Phase 9) — currently just the "live payments"
@@ -24,28 +94,8 @@ import { DEFAULT_TRADE_POLICY, type TradePolicy } from "@/lib/reputation";
  * negative is harmless, while a false positive would be dangerous.
  */
 export async function isLivePaymentsEnabled(): Promise<boolean> {
-  const admin = createAdminSupabase();
-  const { data, error } = await admin
-    .from("platform_settings")
-    .select("live_payments")
-    .eq("id", true)
-    .maybeSingle();
-  if (error) {
-    // Before migration 0018 is applied the table doesn't exist. That's a normal
-    // pre-migration state, not a fault — treat it as TEST mode silently rather
-    // than logging on every request. PostgREST reports a missing table as
-    // PGRST205 ("Could not find the table … in the schema cache").
-    const missingTable =
-      error.code === "PGRST205" ||
-      /platform_settings/.test(error.message ?? "");
-    if (!missingTable) {
-      console.error(
-        `[settings] failed to read live_payments: ${error.message}`,
-      );
-    }
-    return false;
-  }
-  return data?.live_payments === true;
+  const row = await getSettingsRow();
+  return row?.live_payments === true;
 }
 
 /**
@@ -64,6 +114,8 @@ export async function setLivePayments(
     p_enabled: enabled,
   });
   if (error) throw new Error(error.message);
+  // Drop the cached settings row so the change takes effect at once, not in 30s.
+  revalidateTag("platform-settings");
 }
 
 /**
@@ -90,19 +142,12 @@ const DEFAULT_FEE: PlatformFee = { bps: 25, min: "0", max: null };
  * never silently zero out platform revenue or block a release.
  */
 export async function getPlatformFee(): Promise<PlatformFee> {
-  const admin = createAdminSupabase();
-  const { data, error } = await admin
-    .from("platform_settings")
-    .select("fee_bps, fee_min_usdt, fee_max_usdt")
-    .eq("id", true)
-    .maybeSingle();
-  if (error || !data) {
-    return DEFAULT_FEE;
-  }
+  const row = await getSettingsRow();
+  if (!row) return DEFAULT_FEE;
   return {
-    bps: data.fee_bps ?? DEFAULT_FEE.bps,
-    min: data.fee_min_usdt ?? DEFAULT_FEE.min,
-    max: data.fee_max_usdt ?? DEFAULT_FEE.max,
+    bps: row.fee_bps ?? DEFAULT_FEE.bps,
+    min: row.fee_min_usdt ?? DEFAULT_FEE.min,
+    max: row.fee_max_usdt ?? DEFAULT_FEE.max,
   };
 }
 
@@ -123,6 +168,7 @@ export async function setPlatformFee(
     p_fee_max: fee.max,
   });
   if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }
 
 /**
@@ -132,33 +178,25 @@ export async function setPlatformFee(
  * limits can never silently vanish. Cap columns of `null` mean "unlimited".
  */
 export async function getTradePolicy(): Promise<TradePolicy> {
-  const admin = createAdminSupabase();
-  const { data, error } = await admin
-    .from("platform_settings")
-    .select(
-      "min_merchant_bond, trade_limit_new, trade_limit_active, trade_limit_established, tier_active_trades, tier_established_trades",
-    )
-    .eq("id", true)
-    .maybeSingle();
-  if (error || !data) {
-    return DEFAULT_TRADE_POLICY;
-  }
-  const num = (v: number | null, fallback: number | null): number | null =>
-    v === null || v === undefined ? fallback : Number(v);
+  const row = await getSettingsRow();
+  if (!row) return DEFAULT_TRADE_POLICY;
+  const num = (
+    v: string | number | null,
+    fallback: number | null,
+  ): number | null => (v === null || v === undefined ? fallback : Number(v));
   return {
     minMerchantBond:
-      num(data.min_merchant_bond, DEFAULT_TRADE_POLICY.minMerchantBond) ??
+      num(row.min_merchant_bond, DEFAULT_TRADE_POLICY.minMerchantBond) ??
       DEFAULT_TRADE_POLICY.minMerchantBond,
-    newCap: num(data.trade_limit_new, DEFAULT_TRADE_POLICY.newCap),
-    activeCap: num(data.trade_limit_active, DEFAULT_TRADE_POLICY.activeCap),
+    newCap: num(row.trade_limit_new, DEFAULT_TRADE_POLICY.newCap),
+    activeCap: num(row.trade_limit_active, DEFAULT_TRADE_POLICY.activeCap),
     establishedCap: num(
-      data.trade_limit_established,
+      row.trade_limit_established,
       DEFAULT_TRADE_POLICY.establishedCap,
     ),
-    activeAfter:
-      data.tier_active_trades ?? DEFAULT_TRADE_POLICY.activeAfter,
+    activeAfter: row.tier_active_trades ?? DEFAULT_TRADE_POLICY.activeAfter,
     establishedAfter:
-      data.tier_established_trades ?? DEFAULT_TRADE_POLICY.establishedAfter,
+      row.tier_established_trades ?? DEFAULT_TRADE_POLICY.establishedAfter,
   };
 }
 
@@ -184,6 +222,7 @@ export async function setTradePolicy(
     p_established_trades: policy.establishedAfter,
   });
   if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }
 
 /** The default order payment window (minutes) — mirrors the SQL default. */
@@ -197,16 +236,11 @@ export const DEFAULT_ORDER_TTL_MINUTES = 15;
  * itself falls back to, so the window can never silently vanish.
  */
 export async function getOrderTtlMinutes(): Promise<number> {
-  const admin = createAdminSupabase();
-  const { data, error } = await admin
-    .from("platform_settings")
-    .select("order_ttl_minutes")
-    .eq("id", true)
-    .maybeSingle();
-  if (error || !data || data.order_ttl_minutes == null) {
+  const row = await getSettingsRow();
+  if (!row || row.order_ttl_minutes == null) {
     return DEFAULT_ORDER_TTL_MINUTES;
   }
-  return data.order_ttl_minutes;
+  return row.order_ttl_minutes;
 }
 
 /**
@@ -224,4 +258,5 @@ export async function setOrderTtlMinutes(
     p_minutes: minutes,
   });
   if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }

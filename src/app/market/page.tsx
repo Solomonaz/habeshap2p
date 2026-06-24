@@ -50,7 +50,7 @@ export default async function MarketPage() {
           </Link>
         </div>
 
-        <div className="panel mt-7 p-5 sm:p-6">
+        <div className="panel animate-rise mt-7 p-5 sm:p-6">
           <OrderBook
             initialAds={initialAds}
             currentUserId={user.id}
