@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { resolveDispute } from "@/lib/disputes";
+import { reinstateAccount } from "@/lib/accounts";
 import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
 import { approveKyc, rejectKyc } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
@@ -73,6 +74,63 @@ export async function resolveDisputeAction(
   revalidatePath("/admin");
   revalidatePath(`/admin/disputes/${parsed.data.disputeId}`);
   return {};
+}
+
+const reinstateSchema = z.object({
+  userId: z.string().uuid(),
+  // The dispute we came from, so we can send the admin back to that record.
+  disputeId: z.string().uuid().optional(),
+});
+
+export type ReinstateState = { error?: string; ok?: boolean; returned?: string };
+
+/**
+ * Admin appeal: reinstate a permanently-banned seller (e.g. they were banned
+ * after a buyer falsely marked "paid", or had a legitimate reason for missing the
+ * release window). Returns the funds the platform forfeited from them and flips
+ * the account back to ACTIVE. Same triple authorization as every other admin
+ * action: the /admin route guard, the re-check here, and the SQL
+ * `account_reinstate` re-checks is_admin (and that the account is BANNED).
+ */
+export async function reinstateAccountAction(
+  _prev: ReinstateState,
+  formData: FormData,
+): Promise<ReinstateState> {
+  const parsed = reinstateSchema.safeParse({
+    userId: formData.get("userId"),
+    disputeId: formData.get("disputeId") ?? undefined,
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  let returned: string;
+  try {
+    returned = await reinstateAccount({ userId: parsed.data.userId, adminId: user.id });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Reinstatement failed" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "account_reinstate",
+    targetType: "user",
+    targetId: parsed.data.userId,
+    detail: `reinstated on appeal; returned ${returned} USDT`,
+  });
+
+  revalidatePath("/admin/accounts");
+  if (parsed.data.disputeId) {
+    revalidatePath(`/admin/disputes/${parsed.data.disputeId}`);
+  }
+  return { ok: true, returned };
 }
 
 const withdrawalSchema = z.object({

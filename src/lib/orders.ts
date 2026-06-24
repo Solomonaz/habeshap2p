@@ -73,10 +73,54 @@ export async function cancel(orderId: string, actorId: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Expire ONE order if it is overdue and still unpaid (CREATED + past deadline).
+ * Idempotent: returns true only if this call cancelled it, false otherwise. Lets
+ * the UI auto-cancel the instant its countdown ends, instead of waiting on the
+ * cron. The SQL re-checks the deadline, so a not-yet-due order is never touched.
+ */
+export async function expireOrderIfDue(orderId: string): Promise<boolean> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase.rpc("order_expire_due", {
+    p_order: orderId,
+  });
+  if (error) throw new Error(error.message);
+  return data ?? false;
+}
+
+/**
+ * Freeze ONE seller if their PAID order's release window has elapsed: sweeps the
+ * seller's whole spendable wallet (available + bond) into a frozen bucket,
+ * temp-bans the account, and auto-opens a dispute (flipping the order to
+ * DISPUTED). Idempotent: returns true only if this call performed the freeze,
+ * false otherwise. The SQL re-checks state + deadline, so it is safe to call any
+ * time — a not-yet-due or non-PAID order is never touched.
+ */
+export async function freezeSellerIfDue(orderId: string): Promise<boolean> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase.rpc("order_freeze_seller", {
+    p_order: orderId,
+  });
+  if (error) throw new Error(error.message);
+  return data ?? false;
+}
+
 /** Cron sweep: cancel every CREATED order past its deadline. Returns count. */
 export async function expireUnpaid(): Promise<number> {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("order_expire_unpaid", {});
+  if (error) throw new Error(error.message);
+  return data ?? 0;
+}
+
+/**
+ * Cron sweep: freeze every seller whose PAID order is past its release deadline
+ * (whole wallet frozen, temp-ban, auto-dispute). The backstop for the order-page
+ * trigger so the penalty fires even when nobody views the order. Returns count.
+ */
+export async function freezeOverdue(): Promise<number> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase.rpc("order_freeze_overdue", {});
   if (error) throw new Error(error.message);
   return data ?? 0;
 }

@@ -1,14 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/lib/env";
-import { expireUnpaid } from "@/lib/orders";
+import { expireUnpaid, freezeOverdue } from "@/lib/orders";
 
 // This route moves money (returns escrowed USDT to sellers), so it must never
 // be statically cached or pre-rendered.
 export const dynamic = "force-dynamic";
 
 /**
- * Cron sweep: auto-cancels CREATED orders past their payment deadline and
- * returns the locked USDT to the seller (security rule #4).
+ * Cron sweep: two passes over overdue orders.
+ *   1. CREATED past deadline → auto-cancel, returning locked USDT to the seller
+ *      (security rule #4).
+ *   2. PAID past the release deadline → freeze the stalling seller's whole wallet,
+ *      temp-ban them, and auto-open a dispute for an admin to rule on.
  *
  * AUTH: guarded by a shared secret. The caller must present it as either
  *   Authorization: Bearer <CRON_SECRET>
@@ -35,7 +38,8 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   }
 
   const cancelled = await expireUnpaid();
-  return NextResponse.json({ ok: true, cancelled });
+  const frozen = await freezeOverdue();
+  return NextResponse.json({ ok: true, cancelled, frozen });
 }
 
 export async function GET(request: NextRequest) {

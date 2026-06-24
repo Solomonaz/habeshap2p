@@ -18,6 +18,26 @@ export default async function NewAdPage() {
     redirect("/verify");
   }
 
+  // The seller's available USDT bounds how large a SELL ad's max order may be
+  // (orders lock USDT in escrow). Read as text for exact-decimal handling.
+  const { data: wallet } = await supabase
+    .from("wallets")
+    .select("usdt_available::text")
+    .eq("user_id", user.id)
+    .single();
+  const availableUsdt = wallet?.usdt_available ?? "0";
+
+  // One open ad per side (migration 0028): a user may hold at most one live SELL
+  // and one live BUY ad. Find which sides are already taken (ACTIVE/PAUSED) so
+  // the form can pre-empt a doomed post with a friendly message + a link to
+  // close/edit the existing one, rather than letting the server action reject it.
+  const { data: openAds } = await supabase
+    .from("ads")
+    .select("side")
+    .eq("user_id", user.id)
+    .neq("status", "CLOSED");
+  const takenSides = (openAds ?? []).map((a) => a.side);
+
   return (
     <>
       <SiteHeader account={accountLabel(user)} active="market" userId={user.id} />
@@ -27,7 +47,7 @@ export default async function NewAdPage() {
           Advertise a rate. Orders against it lock USDT in escrow — that part
           arrives in Phase 3.
         </p>
-        <AdForm />
+        <AdForm availableUsdt={availableUsdt} takenSides={takenSides} />
       </main>
     </>
   );

@@ -42,13 +42,15 @@ export default async function DashboardPage() {
     // JS-float-lossy JSON numbers. Money is parsed from these strings.
     supabase
       .from("wallets")
-      .select("usdt_available::text, usdt_locked::text, usdt_bond::text")
+      .select(
+        "usdt_available::text, usdt_locked::text, usdt_bond::text, usdt_frozen::text",
+      )
       .eq("user_id", user.id)
       .single(),
     supabase
       .from("users")
       .select(
-        "reputation_score, completed_trades, completion_rate, is_merchant, kyc_status",
+        "reputation_score, completed_trades, completion_rate, is_merchant, kyc_status, account_status, ban_reason",
       )
       .eq("id", user.id)
       .single(),
@@ -57,6 +59,11 @@ export default async function DashboardPage() {
   const available = wallet?.usdt_available ?? "0";
   const locked = wallet?.usdt_locked ?? "0";
   const bond = wallet?.usdt_bond ?? "0";
+  const frozen = wallet?.usdt_frozen ?? "0";
+  const accountStatus = profile?.account_status ?? "ACTIVE";
+  const banReason = profile?.ban_reason ?? null;
+  const isFrozen = accountStatus === "FROZEN";
+  const isBanned = accountStatus === "BANNED";
 
   // Derive + persist a deposit address on first visit, then list the user's
   // withdrawals (both run server-side; the read is RLS-scoped to this user).
@@ -83,7 +90,25 @@ export default async function DashboardPage() {
       <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
       <h1 className="text-xl font-semibold text-ink">Account</h1>
 
-      {kycStatus !== "APPROVED" && (
+      {(isFrozen || isBanned) && (
+        <div className="mt-4 rounded-card border border-state-disputed/40 bg-sell-wash p-4">
+          <h2 className="text-sm font-semibold text-state-disputed">
+            {isBanned
+              ? "Account permanently banned"
+              : "Account temporarily suspended"}
+          </h2>
+          <p className="mt-1 text-sm text-state-disputed/90">
+            {isBanned
+              ? "An admin reviewed a missed release and ruled against you. Your frozen funds were forfeited and trading is disabled. If you believe this was a mistake — for example the buyer marked the order paid without actually paying — you can appeal: contact support and an admin will re-review the chat and payment proof. If the appeal succeeds, your funds are returned and your account is reinstated."
+              : "You did not release USDT within the payment window on an order, so your wallet is frozen and trading is suspended pending an admin review. If the admin finds the delay was justified, your funds and account are restored; otherwise the funds are forfeited and the account is banned."}
+          </p>
+          {banReason && (
+            <p className="mt-2 text-xs text-state-disputed/70">{banReason}</p>
+          )}
+        </div>
+      )}
+
+      {kycStatus !== "APPROVED" && !isFrozen && !isBanned && (
         <div className="mt-4 rounded-card border border-amber/40 bg-amber-wash p-4">
           <h2 className="text-sm font-medium text-amber">
             {kycStatus === "PENDING"
@@ -121,6 +146,17 @@ export default async function DashboardPage() {
           </p>
           <p className="text-xs text-ink-faint">Held against open orders</p>
         </div>
+        {Number(frozen) > 0 && (
+          <div className="rounded-card border border-state-disputed/40 bg-sell-wash p-5 sm:col-span-2">
+            <p className="text-sm text-state-disputed">Frozen</p>
+            <p className="mt-1 font-amount text-2xl text-state-disputed">
+              {formatUsdt(frozen)}
+            </p>
+            <p className="text-xs text-state-disputed/70">
+              Suspended pending an admin review of a missed release
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">

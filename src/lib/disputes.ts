@@ -77,7 +77,16 @@ export async function fetchDisputeForOrder(
 // reads therefore go through the service-role client and MUST only be called
 // from routes already guarded by an is_admin check (see requireAdmin).
 
-export type AdminDisputeSummary = DisputeRow & { order: OrderRow };
+export type AdminDisputeSummary = DisputeRow & {
+  order: OrderRow;
+  /**
+   * True when this dispute's seller is auto-frozen for missing the release
+   * window. These need extra care: the seller may have a legitimate reason, or
+   * the buyer may have falsely marked "paid", so the queue flags them so the
+   * admin reviews before the ruling forfeits funds and permanently bans.
+   */
+  sellerFrozen: boolean;
+};
 
 /** Admin queue: disputes by status (default the unresolved ones), newest first. */
 export async function fetchDisputesForAdmin(
@@ -97,18 +106,68 @@ export async function fetchDisputesForAdmin(
   const { data, error } = await query.order("created_at", { ascending: true });
   if (error) throw new Error(`failed to load disputes: ${error.message}`);
   // PostgREST returns the embedded order as an object (one-to-one via FK).
-  return (data ?? []).map((d) => {
+  const rows = (data ?? []).map((d) => {
     const { order, ...rest } = d as DisputeRow & { order: OrderRow };
     return { ...(rest as DisputeRow), order };
   });
+
+  // Flag the missed-release freeze cases by reading each seller's account
+  // standing in one batched query (a FROZEN seller = auto-opened freeze dispute).
+  const sellerIds = [...new Set(rows.map((r) => r.order.seller_id))];
+  const frozen = new Set<string>();
+  if (sellerIds.length > 0) {
+    const { data: sellers } = await supabase
+      .from("users")
+      .select("id, account_status")
+      .in("id", sellerIds);
+    for (const u of sellers ?? []) {
+      if (u.account_status === "FROZEN") frozen.add(u.id);
+    }
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    sellerFrozen: frozen.has(r.order.seller_id),
+  }));
 }
 
 export type AdminProofMessage = MessageRow & { proofUrl: string | null };
+
+/**
+ * Whether this dispute came from an auto-freeze (the seller missed the release
+ * window). When the seller is FROZEN, the admin's ruling does double duty:
+ * FAVOUR_BUYER forfeits the frozen funds + permanently bans; FAVOUR_SELLER
+ * returns them + reinstates. The page surfaces this so the admin rules knowingly.
+ */
+export type SellerStanding = {
+  accountStatus: "ACTIVE" | "FROZEN" | "BANNED";
+  frozenUsdt: string;
+  /** Net funds forfeited to the platform (what an appeal would return). */
+  forfeitedUsdt: string;
+};
+
+/** Net FORFEIT − UNFORFEIT for a user, in exact micros, as a decimal string. */
+function netForfeitedMicros(
+  rows: { type: string; amount_usdt: string }[],
+): string {
+  let micros = 0n;
+  for (const r of rows) {
+    const [whole, frac = ""] = r.amount_usdt.split(".");
+    const m = BigInt(whole + frac.padEnd(6, "0").slice(0, 6));
+    if (r.type === "FORFEIT") micros += m;
+    else if (r.type === "UNFORFEIT") micros -= m;
+  }
+  if (micros < 0n) micros = 0n;
+  const s = micros.toString().padStart(7, "0");
+  const frac = s.slice(-6).replace(/0+$/, "");
+  return frac ? `${s.slice(0, -6)}.${frac}` : s.slice(0, -6);
+}
 
 export type AdminDisputeDetail = {
   dispute: DisputeRow;
   order: OrderRow;
   messages: AdminProofMessage[];
+  sellerStanding: SellerStanding;
 };
 
 /**
@@ -146,5 +205,35 @@ export async function fetchDisputeDetailForAdmin(
     })),
   );
 
-  return { dispute, order, messages };
+  // The seller's current standing + frozen balance, so the console can warn the
+  // admin that a ruling here also disposes of the frozen funds / ban. We also sum
+  // their forfeiture ledger so a BANNED seller's appeal panel knows what a
+  // reinstatement would return.
+  const [{ data: sellerUser }, { data: sellerWallet }, { data: forfeitRows }] =
+    await Promise.all([
+      supabase
+        .from("users")
+        .select("account_status")
+        .eq("id", order.seller_id)
+        .maybeSingle(),
+      supabase
+        .from("wallets")
+        .select("usdt_frozen::text")
+        .eq("user_id", order.seller_id)
+        .maybeSingle(),
+      supabase
+        .from("ledger_entries")
+        .select("type, amount_usdt::text")
+        .eq("user_id", order.seller_id)
+        .in("type", ["FORFEIT", "UNFORFEIT"]),
+    ]);
+  const sellerStanding: SellerStanding = {
+    accountStatus: sellerUser?.account_status ?? "ACTIVE",
+    frozenUsdt: (sellerWallet as { usdt_frozen?: string } | null)?.usdt_frozen ?? "0",
+    forfeitedUsdt: netForfeitedMicros(
+      (forfeitRows ?? []) as { type: string; amount_usdt: string }[],
+    ),
+  };
+
+  return { dispute, order, messages, sellerStanding };
 }

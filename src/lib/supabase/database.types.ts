@@ -27,7 +27,12 @@ export type LedgerType =
   | "BOND_LOCK"
   | "BOND_RELEASE"
   | "WITHDRAW_LOCK"
-  | "WITHDRAW_UNLOCK";
+  | "WITHDRAW_UNLOCK"
+  | "FREEZE"
+  | "UNFREEZE"
+  | "FORFEIT"
+  | "UNFORFEIT";
+export type AccountStatus = "ACTIVE" | "FROZEN" | "BANNED";
 export type PaymentMethod =
   | "TELEBIRR"
   | "CBE"
@@ -65,6 +70,9 @@ export type Database = {
           is_merchant: boolean;
           is_admin: boolean;
           kyc_status: KycStatus;
+          account_status: AccountStatus;
+          frozen_at: string | null;
+          ban_reason: string | null;
           created_at: string;
         };
         Insert: {
@@ -82,6 +90,9 @@ export type Database = {
           is_merchant?: boolean;
           is_admin?: boolean;
           kyc_status?: KycStatus;
+          account_status?: AccountStatus;
+          frozen_at?: string | null;
+          ban_reason?: string | null;
           created_at?: string;
         };
         Update: {
@@ -98,6 +109,9 @@ export type Database = {
           is_merchant?: boolean;
           is_admin?: boolean;
           kyc_status?: KycStatus;
+          account_status?: AccountStatus;
+          frozen_at?: string | null;
+          ban_reason?: string | null;
         };
         Relationships: [];
       };
@@ -108,6 +122,7 @@ export type Database = {
           usdt_locked: string;
           usdt_bond: string;
           usdt_withdraw_locked: string;
+          usdt_frozen: string;
           deposit_address: string | null;
           created_at: string;
           updated_at: string;
@@ -118,6 +133,7 @@ export type Database = {
           usdt_locked?: string;
           usdt_bond?: string;
           usdt_withdraw_locked?: string;
+          usdt_frozen?: string;
           deposit_address?: string | null;
         };
         Update: {
@@ -125,6 +141,7 @@ export type Database = {
           usdt_locked?: string;
           usdt_bond?: string;
           usdt_withdraw_locked?: string;
+          usdt_frozen?: string;
           deposit_address?: string | null;
         };
         Relationships: [
@@ -546,6 +563,26 @@ export type Database = {
       order_expire_unpaid: {
         Args: Record<string, never>;
         Returns: number; // count cancelled
+      };
+      // ── single-order expiry helper (migration 0023) ──
+      order_expire_due: {
+        Args: { p_order: string };
+        Returns: boolean; // true if this call cancelled the overdue order
+      };
+      // ── seller freeze + temp-ban on missed release (migration 0025) ──
+      order_freeze_seller: {
+        Args: { p_order: string };
+        Returns: boolean; // true if this call froze the seller + opened a dispute
+      };
+      // ── cron sweep: freeze sellers of overdue PAID orders (migration 0026) ──
+      order_freeze_overdue: {
+        Args: Record<string, never>;
+        Returns: number; // count of sellers frozen
+      };
+      // ── admin appeal: reinstate a banned account (migration 0027) ──
+      account_reinstate: {
+        Args: { p_user: string; p_admin: string };
+        Returns: string; // USDT amount returned to the seller (decimal string)
       };
       // ── dispute resolution (migration 0010) ──
       order_open_dispute: {

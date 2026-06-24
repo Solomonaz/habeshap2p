@@ -14,11 +14,17 @@ export function AdminResolve({
   buyerLabel,
   sellerLabel,
   amountUsdt,
+  sellerFrozen = false,
+  frozenUsdt = "0",
 }: {
   disputeId: string;
   buyerLabel: string;
   sellerLabel: string;
   amountUsdt: string;
+  /** True when the seller is auto-frozen (missed-release dispute). */
+  sellerFrozen?: boolean;
+  /** The seller's frozen balance (only meaningful when sellerFrozen). */
+  frozenUsdt?: string;
 }) {
   const [state, formAction, pending] = useActionState<ResolveState, FormData>(
     resolveDisputeAction,
@@ -32,6 +38,36 @@ export function AdminResolve({
       <p className="mt-1 text-xs text-ink-faint">
         This moves {amountUsdt} USDT and cannot be undone.
       </p>
+
+      {sellerFrozen && (
+        <div className="mt-3 rounded-md border border-state-disputed/40 bg-sell-wash px-3 py-2.5 text-xs text-state-disputed">
+          <p className="font-semibold">
+            The seller is frozen for missing the release window.
+          </p>
+          <p className="mt-1 text-state-disputed/90">
+            Their entire wallet ({frozenUsdt} USDT) is frozen. Your ruling also
+            decides their fate:
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 text-state-disputed/90">
+            <li>
+              <span className="font-medium">Release to buyer</span> → the {frozenUsdt}{" "}
+              USDT is forfeited to the platform and the account is{" "}
+              <span className="font-medium">permanently banned</span>.
+            </li>
+            <li>
+              <span className="font-medium">Return to seller</span> → the {frozenUsdt}{" "}
+              USDT is unfrozen and the account is{" "}
+              <span className="font-medium">reinstated</span> for normal trading.
+            </li>
+          </ul>
+          <p className="mt-2 font-medium">
+            Before ruling for the buyer, confirm from the chat and payment proof
+            that they actually paid — a buyer can falsely mark &ldquo;paid&rdquo;
+            to trap an honest seller. If payment isn&apos;t proven, return to the
+            seller.
+          </p>
+        </div>
+      )}
 
       {state.error && (
         <p

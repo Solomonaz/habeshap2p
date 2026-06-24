@@ -10,6 +10,7 @@ import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { traderHandle } from "@/lib/handle";
 import { accountLabel } from "@/lib/identity";
 import { AdminResolve } from "./admin-resolve";
+import { ReinstateAccount } from "../../accounts/reinstate";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,9 @@ export default async function AdminDisputePage({
 
   const detail = await fetchDisputeDetailForAdmin(id);
   if (!detail) notFound();
-  const { dispute, order, messages } = detail;
+  const { dispute, order, messages, sellerStanding } = detail;
+  const sellerFrozen = sellerStanding.accountStatus === "FROZEN";
+  const sellerBanned = sellerStanding.accountStatus === "BANNED";
 
   const buyerLabel = `Buyer · ${traderHandle(order.buyer_id)}`;
   const sellerLabel = `Seller · ${traderHandle(order.seller_id)}`;
@@ -84,6 +87,15 @@ export default async function AdminDisputePage({
             <Row label="Buyer pays from">
               <span className="font-medium text-ink">
                 {order.buyer_payment_name}
+              </span>
+            </Row>
+            <Row label="Buyer marked paid">
+              <span className="text-ink-soft">
+                {order.paid_at ? (
+                  new Date(order.paid_at).toLocaleString()
+                ) : (
+                  <span className="text-state-disputed">never</span>
+                )}
               </span>
             </Row>
             <Row label="Buyer">
@@ -149,7 +161,7 @@ export default async function AdminDisputePage({
           )}
         </section>
 
-        <section className="mt-4">
+        <section className="mt-4 space-y-4">
           {resolved ? (
             <p className="rounded-md border border-state-released/40 bg-buy-wash px-4 py-3 text-sm text-state-released">
               Resolved{" "}
@@ -165,6 +177,19 @@ export default async function AdminDisputePage({
               buyerLabel={traderHandle(order.buyer_id)}
               sellerLabel={traderHandle(order.seller_id)}
               amountUsdt={formatUsdt(order.amount_usdt)}
+              sellerFrozen={sellerFrozen}
+              frozenUsdt={formatUsdt(sellerStanding.frozenUsdt)}
+            />
+          )}
+
+          {/* Appeal path: a banned seller can be reinstated even after the
+              dispute is resolved (e.g. the buyer was later found to have lied
+              about paying). This record stays open for that review. */}
+          {sellerBanned && (
+            <ReinstateAccount
+              userId={order.seller_id}
+              disputeId={dispute.id}
+              forfeitedUsdt={formatUsdt(sellerStanding.forfeitedUsdt)}
             />
           )}
         </section>

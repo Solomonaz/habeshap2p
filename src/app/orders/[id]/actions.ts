@@ -4,7 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { markPaid, release, cancel } from "@/lib/orders";
+import {
+  markPaid,
+  release,
+  cancel,
+  fetchOrder,
+  expireOrderIfDue,
+  freezeSellerIfDue,
+} from "@/lib/orders";
 import { openDispute } from "@/lib/disputes";
 
 const schema = z.object({
@@ -66,4 +73,65 @@ export async function runOrderAction(
 
   revalidatePath(`/orders/${parsed.data.orderId}`);
   return {};
+}
+
+const expireSchema = z.object({ orderId: z.string().uuid() });
+
+/**
+ * Fired by the order page the moment its payment countdown reaches zero, so an
+ * overdue unpaid order is auto-cancelled on view instead of waiting for the
+ * background cron. Authorization: the caller must be a party to the order (RLS
+ * returns it only to the buyer/seller); the SQL re-checks the deadline and only
+ * cancels a genuinely overdue CREATED order, so this is safe to call any time.
+ */
+export async function expireOrderAction(orderId: string): Promise<void> {
+  const parsed = expireSchema.safeParse({ orderId });
+  if (!parsed.success) return;
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // RLS scopes this to orders the user is a party to; non-parties get null.
+  const order = await fetchOrder(supabase, parsed.data.orderId);
+  if (!order) return;
+
+  try {
+    const cancelled = await expireOrderIfDue(parsed.data.orderId);
+    if (cancelled) revalidatePath(`/orders/${parsed.data.orderId}`);
+  } catch {
+    // Best-effort; the cron remains the backstop if this transient-fails.
+  }
+}
+
+/**
+ * Fired by the order page the moment a PAID order's release countdown reaches
+ * zero. The seller missed their window, so the database freezes the seller's
+ * whole spendable wallet, temp-bans them, and auto-opens a dispute (order →
+ * DISPUTED) for an admin to rule on. Authorization mirrors expireOrderAction:
+ * the caller must be a party (RLS returns the order only to buyer/seller); the
+ * SQL re-checks the PAID state + deadline so this is safe to call any time.
+ */
+export async function freezeSellerAction(orderId: string): Promise<void> {
+  const parsed = expireSchema.safeParse({ orderId });
+  if (!parsed.success) return;
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  // RLS scopes this to orders the user is a party to; non-parties get null.
+  const order = await fetchOrder(supabase, parsed.data.orderId);
+  if (!order) return;
+
+  try {
+    const frozen = await freezeSellerIfDue(parsed.data.orderId);
+    if (frozen) revalidatePath(`/orders/${parsed.data.orderId}`);
+  } catch {
+    // Best-effort; the cron remains the backstop if this transient-fails.
+  }
 }

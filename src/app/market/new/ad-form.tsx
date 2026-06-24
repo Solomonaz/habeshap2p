@@ -5,20 +5,53 @@ import Link from "next/link";
 import { AD_SIDES, PAYMENT_METHODS } from "@/types/domain";
 import { PAYMENT_METHOD_LABELS, SIDE_LABELS } from "@/lib/labels";
 import { formatRate, formatEtb } from "@/lib/format";
+import {
+  isNonNegativeDecimal,
+  maxEtbForBalance,
+  sellMaxExceedsBalance,
+} from "@/lib/ad-capacity";
 import { createAd, type CreateAdState } from "./actions";
 
 const initialState: CreateAdState = {};
 
-export function AdForm() {
+export function AdForm({
+  availableUsdt,
+  takenSides = [],
+}: {
+  availableUsdt: string;
+  // Sides the user already has a live (ACTIVE/PAUSED) ad on. One open ad per
+  // side (migration 0028), so a taken side cannot be posted again until the
+  // existing ad is closed.
+  takenSides?: string[];
+}) {
   const [state, formAction, pending] = useActionState(createAd, initialState);
 
+  // Default to a side that's still available so the form opens ready-to-post
+  // rather than pre-blocked (only falls back to SELL if both are taken).
+  const firstAvailable =
+    AD_SIDES.find((s) => !takenSides.includes(s)) ?? "SELL";
+
   // Local mirror so the live preview updates as the trader types.
-  const [side, setSide] = useState<(typeof AD_SIDES)[number]>("SELL");
+  const [side, setSide] = useState<(typeof AD_SIDES)[number]>(firstAvailable);
+
+  const sideTaken = takenSides.includes(side);
   const [rate, setRate] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
 
   const showPreview = rate !== "" || min !== "" || max !== "";
+
+  // SELL ads deliver USDT from escrow, so the advertised max can't exceed what
+  // the seller's balance can fund at this rate. Mirror the server check live.
+  const rateValid = isNonNegativeDecimal(rate) && Number(rate) > 0;
+  const maxValid = isNonNegativeDecimal(max) && Number(max) > 0;
+  const capEtb =
+    side === "SELL" && rateValid ? maxEtbForBalance(availableUsdt, rate) : null;
+  const maxExceedsBalance =
+    side === "SELL" &&
+    rateValid &&
+    maxValid &&
+    sellMaxExceedsBalance(max, availableUsdt, rate);
 
   return (
     <form action={formAction} className="mt-6 space-y-6">
@@ -53,6 +86,20 @@ export function AdForm() {
         </div>
       </fieldset>
 
+      {sideTaken && (
+        <p
+          role="alert"
+          className="rounded-md border border-amber/40 bg-amber-wash px-3 py-2 text-sm text-amber"
+        >
+          You already have an open {SIDE_LABELS[side]} ad — only one per side is
+          allowed. Close or edit it from{" "}
+          <Link href="/market/mine" className="font-medium underline">
+            My ads
+          </Link>{" "}
+          before posting another.
+        </p>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-3">
         <Field
           label="Rate (ETB / USDT)"
@@ -74,8 +121,40 @@ export function AdForm() {
           value={max}
           onChange={setMax}
           placeholder="50000"
+          invalid={maxExceedsBalance}
         />
       </div>
+
+      {side === "SELL" && (
+        <p
+          className={
+            "text-xs " +
+            (maxExceedsBalance ? "text-state-disputed" : "text-ink-faint")
+          }
+        >
+          {maxExceedsBalance ? (
+            <>
+              Your max exceeds your balance. You hold{" "}
+              <span className="font-amount">{availableUsdt}</span> USDT, which
+              covers orders up to{" "}
+              <span className="font-amount">{formatEtb(capEtb!)}</span> ETB at
+              this rate. Lower the max or deposit more USDT.
+            </>
+          ) : capEtb ? (
+            <>
+              Selling from a balance of{" "}
+              <span className="font-amount">{availableUsdt}</span> USDT — at this
+              rate your max can be at most{" "}
+              <span className="font-amount">{formatEtb(capEtb)}</span> ETB.
+            </>
+          ) : (
+            <>
+              You hold <span className="font-amount">{availableUsdt}</span> USDT.
+              Enter a rate to see the largest order you can advertise.
+            </>
+          )}
+        </p>
+      )}
 
       {side === "BUY" && (
         <label className="block">
@@ -156,7 +235,7 @@ export function AdForm() {
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || maxExceedsBalance || sideTaken}
           className="rounded-md bg-amber px-5 py-2.5 text-sm font-medium text-paper-raised hover:bg-amber-soft disabled:opacity-60"
         >
           {pending ? "Posting…" : "Post ad"}
@@ -178,12 +257,14 @@ function Field({
   value,
   onChange,
   placeholder,
+  invalid = false,
 }: {
   label: string;
   name: string;
   value: string;
   onChange: (v: string) => void;
   placeholder: string;
+  invalid?: boolean;
 }) {
   return (
     <label className="block">
@@ -196,7 +277,13 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
-        className="mt-1 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+        aria-invalid={invalid}
+        className={
+          "mt-1 w-full rounded-md border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint " +
+          (invalid
+            ? "border-state-disputed focus:border-state-disputed"
+            : "border-paper-border focus:border-amber")
+        }
       />
     </label>
   );

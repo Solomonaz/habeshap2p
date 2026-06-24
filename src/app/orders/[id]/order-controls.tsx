@@ -1,8 +1,14 @@
 "use client";
 
 import { useActionState, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { OrderState } from "@/types/domain";
-import { runOrderAction, type OrderActionState } from "./actions";
+import {
+  runOrderAction,
+  expireOrderAction,
+  freezeSellerAction,
+  type OrderActionState,
+} from "./actions";
 
 function useCountdown(expiresAt: string, active: boolean) {
   const [remaining, setRemaining] = useState(() =>
@@ -37,17 +43,46 @@ export function OrderControls({
   buyerPaymentName: string;
   dispute: { reason: string; openedByMe: boolean } | null;
 }) {
+  const router = useRouter();
   const [actionState, formAction, pending] = useActionState<
     OrderActionState,
     FormData
   >(runOrderAction, {});
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [showDispute, setShowDispute] = useState(false);
+  const [expiring, setExpiring] = useState(false);
+  const [freezing, setFreezing] = useState(false);
 
-  const remaining = useCountdown(expiresAt, state === "CREATED");
+  // The window keeps counting through CREATED *and* PAID, but only an UNPAID
+  // (CREATED) order auto-cancels when it elapses — a PAID order freezes for
+  // dispute instead (auto-cancelling it could strand the buyer's ETB).
+  const remaining = useCountdown(
+    expiresAt,
+    state === "CREATED" || state === "PAID",
+  );
   const mins = Math.floor(remaining / 60000);
   const secs = Math.floor((remaining % 60000) / 1000);
   const expired = remaining <= 0;
+
+  // Bug #1: the instant the countdown hits zero on an unpaid order, cancel it
+  // server-side and refresh — don't sit on "auto-cancelling…" waiting for the
+  // cron. The SQL re-checks the deadline, so this is a no-op if not truly due.
+  useEffect(() => {
+    if (state !== "CREATED" || !expired || expiring) return;
+    setExpiring(true);
+    void expireOrderAction(orderId).finally(() => router.refresh());
+  }, [state, expired, expiring, orderId, router]);
+
+  // The mirror for a PAID order: the instant the release window elapses, the
+  // seller has missed their chance. Freeze their whole wallet, temp-ban them,
+  // and auto-open a dispute server-side, then refresh — the page re-renders into
+  // the DISPUTED branch. The SQL re-checks the PAID state + deadline, so this is
+  // a no-op if the order was meanwhile released or isn't truly due.
+  useEffect(() => {
+    if (state !== "PAID" || !expired || freezing) return;
+    setFreezing(true);
+    void freezeSellerAction(orderId).finally(() => router.refresh());
+  }, [state, expired, freezing, orderId, router]);
 
   if (state === "RELEASED") {
     return (
@@ -87,14 +122,20 @@ export function OrderControls({
 
   return (
     <div className="space-y-4">
-      {state === "CREATED" && (
+      {(state === "CREATED" || state === "PAID") && (
         <div className="flex items-center justify-between rounded-md bg-paper-sunken px-4 py-3 text-sm">
           <span className="text-ink-muted">
-            {expired ? "Payment window elapsed" : "Time to pay"}
+            {expired
+              ? "Payment window elapsed"
+              : state === "PAID"
+                ? "Awaiting seller release"
+                : "Time to pay"}
           </span>
           <span className="font-amount text-ink">
             {expired
-              ? "auto-cancelling…"
+              ? state === "CREATED"
+                ? "auto-cancelling…"
+                : "freezing escrow…"
               : `${mins}:${secs.toString().padStart(2, "0")}`}
           </span>
         </div>
@@ -109,8 +150,10 @@ export function OrderControls({
         </p>
       )}
 
-      {/* Buyer: confirm ETB sent (CREATED only). Never releases escrow. */}
-      {isBuyer && state === "CREATED" && (
+      {/* Buyer: confirm ETB sent (CREATED, before the window elapses). Never
+          releases escrow. Once expired the order is auto-cancelling, so the
+          button is withdrawn (the DB would reject it anyway). */}
+      {isBuyer && state === "CREATED" && !expired && (
         <form action={formAction}>
           <input type="hidden" name="orderId" value={orderId} />
           <input type="hidden" name="intent" value="paid" />
@@ -124,8 +167,11 @@ export function OrderControls({
         </form>
       )}
 
-      {/* Seller: the critical, explicit release. Gated by a confirmation. */}
-      {isSeller && (state === "CREATED" || state === "PAID") && (
+      {/* Seller: the critical, explicit release. Gated by a confirmation. The
+          seller may ONLY release before the window elapses — for both unpaid and
+          paid orders. Once the clock runs out the escrow is frozen (SQL enforces
+          it): an unpaid order is cancel-only, a paid one is dispute-only. */}
+      {isSeller && (state === "CREATED" || state === "PAID") && !expired && (
         <div className="rounded-md border border-paper-border bg-paper-sunken p-4">
           <p className="text-sm text-ink-soft">
             Only release after you have confirmed{" "}
@@ -156,8 +202,10 @@ export function OrderControls({
         </div>
       )}
 
-      {/* Either party may cancel while still unpaid. */}
-      {(isBuyer || isSeller) && state === "CREATED" && (
+      {/* Either party may cancel while still unpaid and within the window. Once
+          the window elapses the order auto-cancels, so the manual button is
+          withdrawn to avoid a redundant click racing the auto-cancel. */}
+      {(isBuyer || isSeller) && state === "CREATED" && !expired && (
         <form action={formAction}>
           <input type="hidden" name="orderId" value={orderId} />
           <input type="hidden" name="intent" value="cancel" />
@@ -169,6 +217,23 @@ export function OrderControls({
             Cancel order
           </button>
         </form>
+      )}
+
+      {/* The instant a PAID order's release window elapses, the seller has missed
+          their chance. The client effect above fires the auto-freeze (seller's
+          whole wallet frozen + temp-banned + dispute opened) and refreshes into
+          the DISPUTED branch. This banner shows for the brief moment in between. */}
+      {(isBuyer || isSeller) && state === "PAID" && expired && (
+        <div className="rounded-md border border-state-disputed/40 bg-sell-wash px-4 py-3 text-sm text-state-disputed">
+          <p className="font-medium">
+            Release window elapsed — freezing the seller&apos;s escrow.
+          </p>
+          <p className="mt-1 text-state-disputed/90">
+            The seller did not release in time. Their funds are being frozen and
+            the order escalated to an admin dispute automatically — no action is
+            needed. {isSeller && "Your account is temporarily suspended pending review."}
+          </p>
+        </div>
       )}
 
       {/* Once PAID, neither side can act unilaterally — the only escape from a
