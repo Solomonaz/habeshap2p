@@ -75,6 +75,13 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Allow building into a separate dir (e.g. when `next dev` holds .next).
   ...(process.env.NEXT_DIST_DIR ? { distDir: process.env.NEXT_DIST_DIR } : {}),
+  // Keep tronweb an external server require (not webpack-bundled) AND ensure
+  // Next's output file tracing copies it into the serverless functions. Without
+  // this the deployed lambda can't resolve tronweb at runtime — the live (Tron)
+  // chain provider then throws "tronweb is not installed" on the first deposit
+  // address derivation. It's a heavy, partly-native package, so bundling it is
+  // both unnecessary and fragile; externalizing is the supported path.
+  serverExternalPackages: ["tronweb"],
   // Fail the production build on type or lint errors — money code must not ship broken.
   typescript: { ignoreBuildErrors: false },
   eslint: { ignoreDuringBuilds: false },

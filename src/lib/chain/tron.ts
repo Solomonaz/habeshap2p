@@ -106,23 +106,26 @@ export class TronGridChainProvider implements ChainProvider {
     this.usdtContract = cfg.usdtContract ?? DEFAULT_USDT_CONTRACT;
   }
 
-  /** Lazily import tronweb (untyped — the module specifier is hidden from the
-   * compiler so the build doesn't require the package until LIVE mode runs). */
+  /**
+   * Lazily import tronweb only when LIVE mode actually runs (it's untyped and
+   * heavy, so we keep it off the hot path in TEST mode). The import is a plain,
+   * statically-analyzable `import("tronweb")` so Next's output file tracing copies
+   * the package into the serverless function — combined with `serverExternalPackages`
+   * in next.config, which keeps it an external require rather than bundling it.
+   * (A hidden/webpackIgnore'd import broke this: the trace missed it and the
+   * deployed lambda threw "tronweb is not installed" even though it was a dep.)
+   */
   private async loadTronWeb(): Promise<TronWebClass> {
     if (this.TronWebCtor) return this.TronWebCtor as TronWebClass;
-    const specifier = "tronweb";
     let mod: Record<string, unknown>;
     try {
-      // webpackIgnore: keep this a true runtime import so the bundler never tries
-      // to resolve tronweb at build time (it's only present in LIVE deployments).
-      mod = (await import(/* webpackIgnore: true */ specifier)) as Record<
-        string,
-        unknown
-      >;
-    } catch {
+      mod = (await import("tronweb")) as unknown as Record<string, unknown>;
+    } catch (err) {
       throw new Error(
-        "Live payments mode is on but the 'tronweb' package is not installed. " +
-          "Run `npm install tronweb` on the server before going live.",
+        "Could not load the 'tronweb' package on the server. Ensure it is a " +
+          "dependency and listed in `serverExternalPackages` (next.config) so it " +
+          "ships in the server bundle. Original error: " +
+          (err instanceof Error ? err.message : String(err)),
       );
     }
     // tronweb v6 exports { TronWeb }; older versions default-export the class.
