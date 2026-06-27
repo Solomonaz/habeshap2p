@@ -38,8 +38,10 @@ export function AdForm({
   const [rate, setRate] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
+  const [notes, setNotes] = useState("");
 
-  const showPreview = rate !== "" || min !== "" || max !== "";
+  const showPreview =
+    rate !== "" || min !== "" || max !== "" || notes.trim() !== "";
 
   // SELL ads deliver USDT from escrow, so the advertised max can't exceed what
   // the seller's balance can fund at this rate. Mirror the server check live.
@@ -200,6 +202,26 @@ export function AdForm({
         </div>
       </fieldset>
 
+      <label className="block">
+        <span className="text-sm font-medium text-ink">Notes (optional)</span>
+        <p className="mt-0.5 text-xs text-ink-faint">
+          Shown to anyone who opens your ad — e.g. the hours you&apos;re online,
+          how fast you pay or release, or any special instructions.
+        </p>
+        <textarea
+          name="notes"
+          rows={3}
+          maxLength={500}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="e.g. Online 9am–9pm. Please pay within 10 minutes. No third-party payments."
+          className="mt-1 w-full resize-y rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber"
+        />
+        <span className="mt-1 block text-right text-xs text-ink-faint">
+          {notes.length}/500
+        </span>
+      </label>
+
       {showPreview && (
         <div className="rounded-card border border-paper-border bg-paper-sunken p-4">
           <p className="text-xs uppercase tracking-wide text-ink-faint">
@@ -220,6 +242,11 @@ export function AdForm({
             </span>{" "}
             ETB.
           </p>
+          {notes.trim() !== "" && (
+            <p className="mt-2 whitespace-pre-wrap border-t border-paper-border pt-2 text-sm text-ink-soft">
+              {notes.trim()}
+            </p>
+          )}
         </div>
       )}
 

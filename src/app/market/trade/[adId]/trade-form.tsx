@@ -108,6 +108,17 @@ export function TradeForm({
         </div>
       </dl>
 
+      {ad.notes && ad.notes.trim() !== "" && (
+        <div className="mt-4 rounded-md border border-paper-border bg-paper-sunken px-3 py-2.5">
+          <p className="text-xs font-medium uppercase tracking-wide text-ink-faint">
+            Advertiser&apos;s notes
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-sm text-ink-soft">
+            {ad.notes}
+          </p>
+        </div>
+      )}
+
       <form action={formAction} className="mt-6 space-y-4">
         <input type="hidden" name="adId" value={ad.id} />
 

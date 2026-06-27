@@ -26,6 +26,13 @@ const createAdSchema = z
     // For BUY ads the advertiser IS the buyer, so we capture the name they will
     // pay from now (rule #2) — it is copied onto each order a seller takes.
     payer_name: z.string().trim().optional(),
+    // Optional free-text note shown to anyone who opens the ad (online hours,
+    // payment timing, instructions). Capped to match the DB check (≤ 500).
+    notes: z
+      .string()
+      .trim()
+      .max(500, "Notes can be at most 500 characters")
+      .optional(),
   })
   .refine((v) => Number(v.min_etb) <= Number(v.max_etb), {
     message: "Minimum cannot exceed maximum",
@@ -49,6 +56,7 @@ export async function createAd(
     max_etb: formData.get("max_etb"),
     payment_methods: formData.getAll("payment_methods"),
     payer_name: formData.get("payer_name") ?? undefined,
+    notes: formData.get("notes") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -119,6 +127,7 @@ export async function createAd(
     max_etb: parsed.data.max_etb,
     payment_methods: parsed.data.payment_methods,
     payer_name: parsed.data.side === "BUY" ? parsed.data.payer_name : null,
+    notes: parsed.data.notes ? parsed.data.notes : null,
     status: "ACTIVE",
   });
 

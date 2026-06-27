@@ -165,6 +165,7 @@ export type Database = {
           payment_methods: PaymentMethod[];
           status: AdStatus;
           payer_name: string | null;
+          notes: string | null;
           created_at: string;
         };
         Insert: {
@@ -177,6 +178,7 @@ export type Database = {
           payment_methods: PaymentMethod[];
           status?: AdStatus;
           payer_name?: string | null;
+          notes?: string | null;
           created_at?: string;
         };
         Update: {

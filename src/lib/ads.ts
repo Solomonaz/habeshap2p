@@ -12,7 +12,7 @@ export type AdWithPoster = AdRow & { poster: PublicProfile | null };
  * exact decimal string our types (and money math) expect.
  */
 const AD_COLUMNS =
-  "id, user_id, side, rate_etb::text, min_etb::text, max_etb::text, payment_methods, payer_name, status, created_at";
+  "id, user_id, side, rate_etb::text, min_etb::text, max_etb::text, payment_methods, payer_name, notes, status, created_at";
 
 /**
  * Loads the active order book and attaches each ad's poster reputation.
