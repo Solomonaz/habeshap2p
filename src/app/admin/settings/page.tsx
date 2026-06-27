@@ -6,12 +6,17 @@ import {
   getPlatformFee,
   getTradePolicy,
   getOrderTtlMinutes,
+  getSweepStrategy,
+  getPooledDepositAddress,
 } from "@/lib/settings";
+import { fetchHotWalletEnergy } from "@/lib/chain";
 import { isTronConfigured } from "@/lib/env";
 import { PaymentsModeToggle } from "./payments-mode-toggle";
 import { FeeSettingForm } from "./fee-setting-form";
 import { TradePolicyForm } from "./trade-policy-form";
 import { OrderWindowForm } from "./order-window-form";
+import { SweepStrategyForm } from "./sweep-strategy-form";
+import { EnergyStakeForm } from "./energy-stake-form";
 
 export const dynamic = "force-dynamic";
 
@@ -23,12 +28,24 @@ export default async function AdminSettingsPage() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) redirect("/market");
 
-  const [live, configured, fee, tradePolicy, orderTtl] = await Promise.all([
+  const [
+    live,
+    configured,
+    fee,
+    tradePolicy,
+    orderTtl,
+    sweepStrategy,
+    pooledAddress,
+    hotEnergy,
+  ] = await Promise.all([
     isLivePaymentsEnabled(),
     Promise.resolve(isTronConfigured()),
     getPlatformFee(),
     getTradePolicy(),
     getOrderTtlMinutes(),
+    getSweepStrategy(),
+    getPooledDepositAddress(),
+    fetchHotWalletEnergy(),
   ]);
 
   // Stored as basis points; the admin works in percent (100 bps = 1%). Exact
@@ -48,6 +65,14 @@ export default async function AdminSettingsPage() {
         </p>
 
         <PaymentsModeToggle live={live} configured={configured} />
+        <SweepStrategyForm current={sweepStrategy} pooledAddress={pooledAddress} />
+        {sweepStrategy === "staking" && (
+          <EnergyStakeForm
+            energy={hotEnergy.energy}
+            live={hotEnergy.live}
+            error={hotEnergy.error}
+          />
+        )}
         <FeeSettingForm percent={feePercent} min={fee.min} max={fee.max} />
         <TradePolicyForm policy={tradePolicy} />
         <OrderWindowForm minutes={orderTtl} />

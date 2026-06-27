@@ -59,6 +59,12 @@ const serverSchema = z.object({
   // chain provider (mainnet USDT). Set this explicitly on a testnet whose USDT
   // contract differs from the built-in default.
   TRON_USDT_CONTRACT: optionalSecret,
+  // ── Phase 9: energy-rental (lending) sweep strategy ── Optional HTTP energy
+  // market used to rent Energy to a deposit address just before sweeping it, so
+  // the sweep never burns TRX. Both must be set for 'rental' strategy to work;
+  // when unset, rental mode degrades to skipping the address (never burns).
+  ENERGY_RENTAL_API_URL: optionalSecret,
+  ENERGY_RENTAL_API_KEY: optionalSecret,
   // ── Telegram auth ── Bot token from @BotFather, used SERVER-SIDE only to
   // verify the HMAC signature on Login Widget callbacks (and to derive the
   // per-user session password). Optional so the build/dev run without it; the
@@ -108,6 +114,8 @@ export function getServerEnv() {
     TRON_HOT_WALLET_PRIVATE_KEY: process.env.TRON_HOT_WALLET_PRIVATE_KEY,
     TRON_DEPOSIT_MNEMONIC: process.env.TRON_DEPOSIT_MNEMONIC,
     TRON_USDT_CONTRACT: process.env.TRON_USDT_CONTRACT,
+    ENERGY_RENTAL_API_URL: process.env.ENERGY_RENTAL_API_URL,
+    ENERGY_RENTAL_API_KEY: process.env.ENERGY_RENTAL_API_KEY,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   });
   if (!parsed.success) {

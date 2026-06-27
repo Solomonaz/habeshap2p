@@ -36,12 +36,15 @@ type SettingsRow = {
   tier_active_trades: number | null;
   tier_established_trades: number | null;
   order_ttl_minutes: number | null;
+  sweep_strategy: string | null;
+  pooled_deposit_address: string | null;
 };
 
 const SETTINGS_COLUMNS =
   "live_payments, fee_bps, fee_min_usdt, fee_max_usdt, min_merchant_bond, " +
   "trade_limit_new, trade_limit_active, trade_limit_established, " +
-  "tier_active_trades, tier_established_trades, order_ttl_minutes";
+  "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
+  "sweep_strategy, pooled_deposit_address";
 
 const loadSettingsRow = unstable_cache(
   async (): Promise<SettingsRow | null> => {
@@ -241,6 +244,65 @@ export async function getOrderTtlMinutes(): Promise<number> {
     return DEFAULT_ORDER_TTL_MINUTES;
   }
   return row.order_ttl_minutes;
+}
+
+/**
+ * The admin-selectable deposit-gas strategy (migration 0029) — how the sweeper
+ * provisions Energy for consolidating a deposit address, or whether it pools
+ * deposits and skips sweeping entirely:
+ *
+ *   staking — delegate Energy from the hot wallet's frozen TRX (no burn).
+ *   rental  — rent Energy from an external market for the sweep.
+ *   pooled  — one shared deposit address, no per-user sweep at all.
+ */
+export type SweepStrategy = "staking" | "rental" | "pooled";
+
+/** Default strategy when the settings row can't be read — mirrors the SQL default. */
+export const DEFAULT_SWEEP_STRATEGY: SweepStrategy = "staking";
+
+const SWEEP_STRATEGIES: readonly SweepStrategy[] = ["staking", "rental", "pooled"];
+
+/**
+ * Read the configured sweep strategy. Service-role read (it drives the sweeper and
+ * the deposit flow). FAIL-SAFE: any read error or an unrecognized value falls back
+ * to 'staking' (the SQL default), which never burns TRX.
+ */
+export async function getSweepStrategy(): Promise<SweepStrategy> {
+  const row = await getSettingsRow();
+  const raw = row?.sweep_strategy;
+  return SWEEP_STRATEGIES.includes(raw as SweepStrategy)
+    ? (raw as SweepStrategy)
+    : DEFAULT_SWEEP_STRATEGY;
+}
+
+/**
+ * The shared pooled deposit address override (migration 0029), or null to use the
+ * configured hot-wallet address. Only meaningful in 'pooled' strategy.
+ */
+export async function getPooledDepositAddress(): Promise<string | null> {
+  const row = await getSettingsRow();
+  return row?.pooled_deposit_address ?? null;
+}
+
+/**
+ * Set the sweep strategy (and, for pooled mode, an optional shared-address
+ * override). Goes through the service-role RPC, which re-checks is_admin and
+ * validates the enum. The caller must already have verified the actor is an admin
+ * (see the admin action).
+ */
+export async function setSweepStrategy(
+  adminId: string,
+  strategy: SweepStrategy,
+  pooledAddress?: string | null,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_sweep_strategy", {
+    p_admin: adminId,
+    p_strategy: strategy,
+    p_pooled_address: pooledAddress ?? null,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }
 
 /**

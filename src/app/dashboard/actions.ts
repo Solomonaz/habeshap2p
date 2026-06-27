@@ -7,10 +7,55 @@ import { toMicros } from "@/lib/money";
 import { postBond, releaseBond } from "@/lib/merchant";
 import { requestWithdrawal } from "@/lib/withdrawals";
 import { isLivePaymentsEnabled } from "@/lib/settings";
+import {
+  createPooledDepositIntent,
+  type PooledDepositIntent,
+} from "@/lib/deposits";
 
 export type MerchantState = { error?: string };
 
 export type WithdrawState = { error?: string; ok?: boolean };
+
+export type DepositIntentState = {
+  error?: string;
+  intent?: PooledDepositIntent;
+};
+
+/**
+ * Create a pooled/omnibus deposit intent (migration 0029): reserve a unique exact
+ * amount the user must send to the shared address, so the poller can attribute the
+ * transfer back to them. Only used when the sweep strategy is 'pooled'. We just
+ * authenticate the actor and validate the amount shape; the RPC allocates the
+ * unique fingerprint.
+ */
+export async function createDepositIntentAction(
+  _prev: DepositIntentState,
+  formData: FormData,
+): Promise<DepositIntentState> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const amount = (formData.get("amount") ?? "").toString().trim();
+  try {
+    if (toMicros(amount) <= 0n) {
+      return { error: "Deposit amount must be positive." };
+    }
+  } catch {
+    return { error: "Enter a valid USDT amount." };
+  }
+
+  try {
+    const intent = await createPooledDepositIntent(user.id, amount);
+    return { intent };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Failed to create deposit request.",
+    };
+  }
+}
 
 /**
  * DEV-ONLY faucet: credits the signed-in user's wallet with test USDT so the

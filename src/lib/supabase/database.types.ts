@@ -45,6 +45,7 @@ export type ChainDirection = "IN" | "OUT";
 export type WithdrawalStatus =
   | "PENDING_APPROVAL"
   | "APPROVED"
+  | "SENDING"
   | "SENT"
   | "CONFIRMED"
   | "REJECTED"
@@ -453,6 +454,11 @@ export type Database = {
           // Admin-configurable order payment window (migration 0022). Minutes a
           // CREATED order may sit unpaid before it is eligible for auto-cancel.
           order_ttl_minutes: number;
+          // Admin-selectable deposit-gas strategy (migration 0029):
+          // 'staking' | 'rental' | 'pooled'. pooled_deposit_address is the shared
+          // omnibus address override (null ⇒ use the hot-wallet address).
+          sweep_strategy: string;
+          pooled_deposit_address: string | null;
           updated_by: string | null;
           updated_at: string;
         };
@@ -487,6 +493,30 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "kyc_submissions_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      deposit_intents: {
+        // Pooled/omnibus deposit attribution by unique amount (migration 0029).
+        // Written only by the create_deposit_intent / credit_pooled_deposit RPCs;
+        // users read their own to render the pooled deposit screen.
+        Row: {
+          id: string;
+          user_id: string;
+          amount_usdt: string;
+          status: string; // PENDING | MATCHED | EXPIRED
+          tx_hash: string | null;
+          created_at: string;
+          expires_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "deposit_intents_user_id_fkey";
             columns: ["user_id"];
             referencedRelation: "users";
             referencedColumns: ["id"];
@@ -636,6 +666,10 @@ export type Database = {
         Args: { p_id: string; p_admin: string; p_reason: string };
         Returns: undefined;
       };
+      withdrawal_claim_for_send: {
+        Args: { p_id: string };
+        Returns: boolean; // true iff this caller moved the row APPROVED → SENDING
+      };
       withdrawal_mark_sent: {
         Args: { p_id: string; p_tx_hash: string };
         Returns: undefined;
@@ -646,6 +680,18 @@ export type Database = {
       };
       withdrawal_mark_confirmed: {
         Args: { p_id: string };
+        Returns: undefined;
+      };
+      withdrawal_reconcile_sent: {
+        Args: { p_id: string; p_admin: string; p_tx_hash: string };
+        Returns: undefined;
+      };
+      withdrawal_reconcile_refund: {
+        Args: { p_id: string; p_admin: string; p_reason: string };
+        Returns: undefined;
+      };
+      withdrawal_stamp_send_tx: {
+        Args: { p_id: string; p_tx_hash: string };
         Returns: undefined;
       };
       // ── identity verification (migration 0015) ──
@@ -708,6 +754,44 @@ export type Database = {
       // ── admin-configurable order payment window (migration 0022) ──
       set_order_ttl: {
         Args: { p_admin: string; p_minutes: number };
+        Returns: undefined;
+      };
+      // ── deposit-gas strategy + pooled deposits (migration 0029) ──
+      set_sweep_strategy: {
+        Args: {
+          p_admin: string;
+          p_strategy: string;
+          p_pooled_address?: string | null;
+        };
+        Returns: undefined;
+      };
+      create_deposit_intent: {
+        Args: { p_user: string; p_base_amount: string };
+        // The new intent row (amount_usdt is the exact amount the user must send).
+        Returns: {
+          id: string;
+          user_id: string;
+          amount_usdt: string;
+          status: string;
+          tx_hash: string | null;
+          created_at: string;
+          expires_at: string;
+        };
+      };
+      credit_pooled_deposit: {
+        Args: { p_tx_hash: string; p_amount: string };
+        // 'credited' (newly credited a user), 'duplicate' (already processed or
+        // locked by a concurrent poll), or 'unmatched' (no intent for this amount
+        // — real funds that need manual reconciliation).
+        Returns: string;
+      };
+      // ── cron mutual-exclusion lease lock (migration 0030) ──
+      try_acquire_cron_lock: {
+        Args: { p_name: string; p_holder: string; p_ttl_seconds: number };
+        Returns: boolean; // true iff this caller now holds the lease
+      };
+      release_cron_lock: {
+        Args: { p_name: string; p_holder: string };
         Returns: undefined;
       };
       platform_stats: {

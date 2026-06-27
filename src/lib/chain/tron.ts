@@ -1,15 +1,18 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { fromMicros, toMicros } from "@/lib/money";
+import type { SweepStrategy } from "@/lib/settings";
 import type { TronNetwork } from "./config";
 import { DEPOSIT_MIN_CONFIRMATIONS } from "./config";
 import type {
   ChainProvider,
+  EnergySnapshot,
   HotWalletReserve,
   IncomingTransfer,
   SendResult,
   SweepOutcome,
 } from "./provider";
+import { EnergyRentalUnavailable, rentEnergy } from "./energy-rental";
 
 /**
  * The REAL Tron (TRC-20 USDT) chain provider — the live counterpart to
@@ -49,14 +52,15 @@ const DEFAULT_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 const TRON_DERIVATION_PREFIX = "m/44'/195'/0'/0/";
 
 /**
- * A USDT TRC-20 transfer costs ~13–30 TRX of energy when the sender has no
- * staked energy (the common case for throwaway deposit addresses). If a deposit
- * address holds USDT but less than this much TRX, the sweeper tops it up from
- * the hot wallet first and forwards the USDT on the next run once gas confirms.
+ * Energy a single TRC-20 USDT transfer consumes. A transfer to an address that
+ * already holds USDT costs ~13–30k; to a fresh balance ~65k. We provision for the
+ * worst case (with headroom) so a sweep never falls short and burns TRX.
  */
-const SWEEP_GAS_THRESHOLD_SUN = 30_000_000n; // 30 TRX (sun = micro-TRX)
-/** How much TRX to send when topping up gas — a little above the threshold. */
-const SWEEP_GAS_TOPUP_SUN = 35_000_000n; // 35 TRX
+const USDT_TRANSFER_ENERGY = 65_000;
+/** Safety headroom on the Energy we delegate/rent per sweep. */
+const ENERGY_SAFETY_MULTIPLIER = 1.3;
+/** 1 TRX = 1e6 sun. */
+const SUN_PER_TRX = 1_000_000n;
 
 export type TronProviderConfig = {
   network: TronNetwork;
@@ -255,36 +259,214 @@ export class TronGridChainProvider implements ChainProvider {
   }
 
   /**
-   * Consolidate one per-user deposit address into the hot wallet. Reads the
-   * address's USDT; if it has none, nothing to do. If it has USDT but too little
-   * TRX to pay for the transfer's energy, it sends gas from the hot wallet this
-   * run and forwards the USDT on a later run (once the gas confirms). Otherwise
-   * it derives the address's key from the deposit mnemonic and forwards the full
-   * USDT balance to the hot wallet. Never touches the internal ledger.
+   * Consolidate one per-user deposit address into the hot wallet WITHOUT burning
+   * TRX. Two-phase by design: the first run provisions Energy for the address
+   * (delegating it from the hot wallet's stake, or renting it), the next run
+   * forwards the USDT once the Energy is live.
+   *
+   *   staking — delegate Energy from the hot wallet's frozen TRX, sweep, then
+   *             reclaim the delegation. TRX is locked, never spent.
+   *   rental  — rent Energy from the external market, then sweep (rental expires).
+   *   pooled  — no-op: pooled mode has no per-user deposit addresses to sweep.
+   *
+   * If Energy can't be provisioned (nothing staked, rental down, …) the address is
+   * SKIPPED with a reason and the USDT is left for a later run — we never fall back
+   * to sending TRX. Never touches the internal ledger (credited at deposit time).
    */
   async sweepDepositAddress(
     userId: string,
     fromAddress: string,
+    strategy: SweepStrategy,
   ): Promise<SweepOutcome> {
-    const { trx, usdt } = await this.readBalances(fromAddress);
-    const usdtMicros = toMicros(usdt);
-    if (usdtMicros <= 0n) return { status: "skipped" };
-
-    // Not enough TRX to pay for the transfer's energy — gas it up this run and
-    // sweep on the next one once the top-up confirms.
-    if (toMicros(trx) < SWEEP_GAS_THRESHOLD_SUN) {
-      const hot = await this.getSigner();
-      const topup = await hot.trx.sendTransaction(
-        fromAddress,
-        Number(SWEEP_GAS_TOPUP_SUN),
-      );
-      const txHash =
-        topup.txid ?? topup.transaction?.txID ?? "";
-      if (!txHash) throw new Error("gas top-up returned no tx hash");
-      return { status: "gassed", txHash };
+    if (strategy === "pooled") {
+      // Pooled deposits land straight in the hot wallet — nothing to consolidate.
+      return { status: "skipped", reason: "pooled mode — no per-user sweep" };
     }
 
-    // Derive the deposit address's own key so we can sign the outbound transfer.
+    const { usdt } = await this.readBalances(fromAddress);
+    const usdtMicros = toMicros(usdt);
+    if (usdtMicros <= 0n) return { status: "skipped", reason: "no USDT" };
+
+    const neededEnergy = Math.ceil(
+      USDT_TRANSFER_ENERGY * ENERGY_SAFETY_MULTIPLIER,
+    );
+    const available = await this.addressEnergyAvailable(fromAddress);
+
+    // Phase 1: provision Energy if the address doesn't have enough yet.
+    if (available < neededEnergy) {
+      if (strategy === "staking") {
+        return this.delegateEnergyForSweep(fromAddress, neededEnergy);
+      }
+      // strategy === "rental"
+      try {
+        const { reference } = await rentEnergy(fromAddress, neededEnergy);
+        return { status: "rented", txHash: reference };
+      } catch (err) {
+        if (err instanceof EnergyRentalUnavailable) {
+          return { status: "skipped", reason: err.message };
+        }
+        throw err;
+      }
+    }
+
+    // Phase 2: the address has Energy — forward its full USDT balance.
+    const txHash = await this.transferFromDepositAddress(
+      userId,
+      fromAddress,
+      usdtMicros,
+    );
+
+    // Reclaim any Energy delegated to this address so the hot wallet's stake is
+    // freed for the next sweep. Done REGARDLESS of the current strategy: if an
+    // earlier staking run delegated Energy here and the admin has since switched
+    // to 'rental', we must STILL undelegate it now or that stake stays delegated
+    // to a throwaway address forever, permanently shrinking the staking pool. The
+    // reclaim reads the actual on-chain delegated amount and is a no-op when there
+    // is none (the rental path never delegates), so it is always safe to call.
+    await this.reclaimDelegatedEnergy(fromAddress);
+
+    return { status: "swept", txHash, amountUsdt: usdt };
+  }
+
+  /** Energy currently available to an address (delegated + owned − used). */
+  private async addressEnergyAvailable(address: string): Promise<number> {
+    const tronWeb = await this.getSigner();
+    const res = await tronWeb.trx.getAccountResources(address);
+    const limit = Number(res.EnergyLimit ?? 0);
+    const used = Number(res.EnergyUsed ?? 0);
+    return Math.max(0, limit - used);
+  }
+
+  /**
+   * Sun of staked TRX to delegate to yield `energy` units, derived from the
+   * network ratio (TotalEnergyLimit / TotalEnergyWeight = energy per staked TRX).
+   */
+  private async sunForEnergy(energy: number): Promise<bigint> {
+    const tronWeb = await this.getSigner();
+    const res = await tronWeb.trx.getAccountResources(this.hotWalletAddress);
+    const totalLimit = Number(res.TotalEnergyLimit ?? 0);
+    const totalWeight = Number(res.TotalEnergyWeight ?? 0);
+    if (totalLimit <= 0 || totalWeight <= 0) {
+      throw new Error("could not read network Energy ratio from TronGrid");
+    }
+    const energyPerTrx = totalLimit / totalWeight; // energy per 1 TRX staked
+    const trx = energy / energyPerTrx;
+    return BigInt(Math.ceil(trx)) * SUN_PER_TRX;
+  }
+
+  /** Sign + broadcast a transaction the hot-wallet signer just built. */
+  private async signAndSend(tx: unknown): Promise<string> {
+    const tronWeb = await this.getSigner();
+    const signed = await tronWeb.trx.sign(tx);
+    const receipt = await tronWeb.trx.sendRawTransaction(signed);
+
+    // CRITICAL: tronweb's sendRawTransaction ALWAYS echoes the signed transaction
+    // back (receipt.transaction), and a signed tx always carries a precomputed
+    // txID — so a non-empty tx hash does NOT mean the node accepted the broadcast.
+    // A rejection comes back with an error `code` (CONTRACT_VALIDATE_ERROR,
+    // SIGERROR, TAPOS_ERROR, BANDWIDTH/ENERGY errors, …) and/or result === false.
+    // We MUST gate on that, or a rejected freeze / unfreeze / delegate /
+    // undelegate would be reported as success with a hash that never lands
+    // on-chain — leaving the staking strategy (and the admin's Energy view +
+    // audit log) silently wrong. We mirror tronweb's own success criterion
+    // (failure iff an error `code` is present) so a genuine success is never
+    // false-rejected into a retry that would double-stake TRX; `result === false`
+    // is an extra belt for nodes that signal failure that way.
+    if (receipt.code || receipt.result === false) {
+      const code = receipt.code ? String(receipt.code) : "node rejected the broadcast";
+      let detail = "";
+      if (receipt.message) {
+        // The failure message is hex-encoded; decode it best-effort for the log.
+        try {
+          detail = `: ${tronWeb.toUtf8?.(receipt.message) ?? receipt.message}`;
+        } catch {
+          detail = `: ${receipt.message}`;
+        }
+      }
+      throw new Error(`transaction broadcast was not accepted (${code}${detail})`);
+    }
+
+    const txHash = receipt.txid ?? receipt.transaction?.txID ?? "";
+    if (!txHash) {
+      throw new Error("transaction broadcast accepted but returned no tx hash");
+    }
+    return txHash;
+  }
+
+  /**
+   * Phase 1 (staking): delegate `energy` units of Energy from the hot wallet's
+   * frozen stake to the deposit address. Returns `skipped` (never throws) when the
+   * hot wallet has no spare staked Energy — the address waits for the next run.
+   */
+  private async delegateEnergyForSweep(
+    fromAddress: string,
+    energy: number,
+  ): Promise<SweepOutcome> {
+    const hotEnergy = await this.getHotWalletEnergy();
+    if (hotEnergy.energyAvailable < energy) {
+      return {
+        status: "skipped",
+        reason:
+          `hot wallet has ${hotEnergy.energyAvailable} Energy, needs ${energy} ` +
+          `— stake more TRX for Energy to enable staking sweeps`,
+      };
+    }
+
+    const tronWeb = await this.getSigner();
+    const amountSun = await this.sunForEnergy(energy);
+    const tx = await tronWeb.transactionBuilder.delegateResource(
+      Number(amountSun),
+      fromAddress,
+      "ENERGY",
+      this.hotWalletAddress,
+    );
+    const txHash = await this.signAndSend(tx);
+    if (!txHash) throw new Error("Energy delegation returned no tx hash");
+    return { status: "delegated", txHash };
+  }
+
+  /**
+   * Reclaim Energy delegated to a deposit address back to the hot wallet. Reads
+   * the exact amount currently delegated (hot wallet → address) and undelegates
+   * just that, so it is strategy-independent and idempotent: it no-ops when
+   * nothing is delegated (e.g. the rental path, or an address swept by a different
+   * strategy). Best-effort — a failure here is logged but never fails the
+   * (already successful) sweep that money-wise has completed.
+   */
+  private async reclaimDelegatedEnergy(fromAddress: string): Promise<void> {
+    try {
+      const tronWeb = await this.getSigner();
+      const delegated = await tronWeb.trx.getDelegatedResourceV2(
+        this.hotWalletAddress,
+        fromAddress,
+      );
+      const amountSun = Number(
+        delegated.delegatedResource?.[0]?.frozen_balance_for_energy ?? 0,
+      );
+      if (amountSun <= 0) return; // nothing delegated (e.g. rental path)
+      const tx = await tronWeb.transactionBuilder.undelegateResource(
+        amountSun,
+        fromAddress,
+        "ENERGY",
+        this.hotWalletAddress,
+      );
+      await this.signAndSend(tx);
+    } catch (err) {
+      console.error(
+        `[tron] failed to reclaim delegated Energy from ${fromAddress.slice(
+          0,
+          6,
+        )}…: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Derive the deposit address's key and forward its full USDT to the hot wallet. */
+  private async transferFromDepositAddress(
+    userId: string,
+    fromAddress: string,
+    usdtMicros: bigint,
+  ): Promise<string> {
     const TronWeb = await this.loadTronWeb();
     const path = `${TRON_DERIVATION_PREFIX}${addressIndex(userId)}`;
     const derived = TronWeb.fromMnemonic(this.depositMnemonic, path);
@@ -308,7 +490,56 @@ export class TronGridChainProvider implements ChainProvider {
       .transfer(this.hotWalletAddress, usdtMicros.toString())
       .send({ from: fromAddress });
     if (!txHash) throw new Error("sweep transfer returned no tx hash");
-    return { status: "swept", txHash, amountUsdt: usdt };
+    return txHash;
+  }
+
+  /** Hot-wallet Energy snapshot (staking strategy + ops console). */
+  async getHotWalletEnergy(): Promise<EnergySnapshot> {
+    const tronWeb = await this.getSigner();
+    const res = await tronWeb.trx.getAccountResources(this.hotWalletAddress);
+    const energyLimit = Number(res.EnergyLimit ?? 0);
+    const energyUsed = Number(res.EnergyUsed ?? 0);
+    // V2 stake for Energy, in sun, summed across the account's frozen entries.
+    const account = await tronWeb.trx.getAccount(this.hotWalletAddress);
+    const frozenSun = (account.frozenV2 ?? [])
+      .filter((f) => f.type === "ENERGY")
+      .reduce((sum, f) => sum + BigInt(Math.trunc(Number(f.amount ?? 0))), 0n);
+    return {
+      energyLimit,
+      energyUsed,
+      energyAvailable: Math.max(0, energyLimit - energyUsed),
+      frozenTrx: fromMicros(frozenSun),
+    };
+  }
+
+  /** Stake (FreezeBalanceV2) hot-wallet TRX for Energy. */
+  async freezeForEnergy(amountTrx: string): Promise<SendResult> {
+    const tronWeb = await this.getSigner();
+    const amountSun = Number(toMicros(amountTrx));
+    if (amountSun <= 0) throw new Error("freeze amount must be positive");
+    const tx = await tronWeb.transactionBuilder.freezeBalanceV2(
+      amountSun,
+      "ENERGY",
+      this.hotWalletAddress,
+    );
+    const txHash = await this.signAndSend(tx);
+    if (!txHash) throw new Error("freeze returned no tx hash");
+    return { txHash };
+  }
+
+  /** Unstake (UnfreezeBalanceV2) hot-wallet Energy stake. */
+  async unfreezeEnergy(amountTrx: string): Promise<SendResult> {
+    const tronWeb = await this.getSigner();
+    const amountSun = Number(toMicros(amountTrx));
+    if (amountSun <= 0) throw new Error("unfreeze amount must be positive");
+    const tx = await tronWeb.transactionBuilder.unfreezeBalanceV2(
+      amountSun,
+      "ENERGY",
+      this.hotWalletAddress,
+    );
+    const txHash = await this.signAndSend(tx);
+    if (!txHash) throw new Error("unfreeze returned no tx hash");
+    return { txHash };
   }
 
   /** Current head block number. */
@@ -357,10 +588,55 @@ type TronWebInstance = {
   };
   trx: {
     getBalance: (address: string) => Promise<number>;
-    sendTransaction: (
+    getAccountResources: (address: string) => Promise<{
+      EnergyLimit?: number;
+      EnergyUsed?: number;
+      TotalEnergyLimit?: number;
+      TotalEnergyWeight?: number;
+    }>;
+    getAccount: (address: string) => Promise<{
+      frozenV2?: { type?: string; amount?: number }[];
+    }>;
+    getDelegatedResourceV2: (
+      from: string,
       to: string,
+    ) => Promise<{
+      delegatedResource?: { frozen_balance_for_energy?: number }[];
+    }>;
+    sign: (tx: unknown) => Promise<unknown>;
+    sendRawTransaction: (signedTx: unknown) => Promise<{
+      result?: boolean;
+      code?: string;
+      message?: string;
+      txid?: string;
+      transaction?: { txID?: string };
+    }>;
+  };
+  /** Decode a hex-encoded node message (e.g. a broadcast rejection reason). */
+  toUtf8?: (hex: string) => string;
+  transactionBuilder: {
+    delegateResource: (
       amountSun: number,
-    ) => Promise<{ txid?: string; transaction?: { txID?: string } }>;
+      receiver: string,
+      resource: "ENERGY" | "BANDWIDTH",
+      owner: string,
+    ) => Promise<unknown>;
+    undelegateResource: (
+      amountSun: number,
+      receiver: string,
+      resource: "ENERGY" | "BANDWIDTH",
+      owner: string,
+    ) => Promise<unknown>;
+    freezeBalanceV2: (
+      amountSun: number,
+      resource: "ENERGY" | "BANDWIDTH",
+      owner: string,
+    ) => Promise<unknown>;
+    unfreezeBalanceV2: (
+      amountSun: number,
+      resource: "ENERGY" | "BANDWIDTH",
+      owner: string,
+    ) => Promise<unknown>;
   };
 };
 type TronWebClass = {

@@ -119,15 +119,33 @@ export type WithdrawalProcessResult = {
   sent: number;
   failed: number;
   confirmed: number;
+  /**
+   * Rows left parked in SENDING because bookkeeping failed around the broadcast —
+   * they need a human to reconcile (and must NEVER be auto-retried). A non-zero
+   * value here is an operational alarm, not routine.
+   */
+  stuck: number;
 };
 
 /**
  * Signer worker (cron): broadcast every APPROVED withdrawal and advance any SENT
  * ones to CONFIRMED.
  *
- * For each APPROVED row we call the chain provider's sendUsdt and then mark the
- * row SENT (funds burned) on success or FAILED (funds refunded) on error. Every
- * attempt is logged (rule #6: "log every signing op") — without secrets.
+ * At-most-once payout via a CLAIM (migration 0031). For each APPROVED row we first
+ * atomically claim it (APPROVED → SENDING); only the runner that wins the claim
+ * broadcasts, so two overlapping runs can never both pay the same withdrawal. Then:
+ *
+ *   • broadcast succeeds      → mark SENT (funds debited).
+ *   • broadcast THROWS        → mark FAILED (funds refunded) — safe, nothing left.
+ *   • broadcast OK but the SENT bookkeeping fails → the row stays SENDING and is
+ *     surfaced (`stuck`) for manual reconciliation. We must NOT refund (the USDT is
+ *     already gone) and must NOT retry (that double-sends).
+ *
+ * The crucial invariant: once `sendUsdt` returns successfully we never take the
+ * refund path. Every attempt is logged (rule #6) — without secrets.
+ *
+ * Callers should run this under the process-withdrawals cron lock so claims rarely
+ * even contend; the claim is the correctness guarantee, the lock is hygiene.
  */
 export async function processApprovedWithdrawals(): Promise<WithdrawalProcessResult> {
   const supabase = createAdminSupabase();
@@ -142,42 +160,97 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
 
   let sent = 0;
   let failed = 0;
+  let stuck = 0;
   for (const w of (approved ?? []) as {
     id: string;
     to_address: string;
     amount_usdt: string;
   }[]) {
+    // 1. CLAIM atomically (APPROVED → SENDING). A row already taken by a concurrent
+    //    run (or no longer APPROVED) returns false → skip without broadcasting. A
+    //    claim error leaves the row APPROVED for the next run.
+    let claimed = false;
+    try {
+      const { data, error: clErr } = await supabase.rpc(
+        "withdrawal_claim_for_send",
+        { p_id: w.id },
+      );
+      if (clErr) throw new Error(clErr.message);
+      claimed = data === true;
+    } catch (e) {
+      console.error(
+        `[withdrawal-signer] could not claim ${w.id}: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+      continue;
+    }
+    if (!claimed) continue;
+
     // Audit log of the signing attempt — never include keys or full addresses.
     console.info(
       `[withdrawal-signer] broadcasting ${w.id} amount=${w.amount_usdt} ` +
         `to=${w.to_address.slice(0, 6)}… network=${provider.network}`,
     );
+
+    // 2. BROADCAST. A throw here means the funds NEVER left → refund is safe.
+    let txHash: string;
     try {
-      const { txHash } = await provider.sendUsdt(w.to_address, w.amount_usdt);
-      const { error: sErr } = await supabase.rpc("withdrawal_mark_sent", {
-        p_id: w.id,
-        p_tx_hash: txHash,
-      });
-      if (sErr) throw new Error(sErr.message);
-      sent += 1;
-      console.info(`[withdrawal-signer] sent ${w.id} tx=${txHash}`);
+      ({ txHash } = await provider.sendUsdt(w.to_address, w.amount_usdt));
     } catch (e) {
       const reason = e instanceof Error ? e.message : "broadcast failed";
-      console.error(`[withdrawal-signer] FAILED ${w.id}: ${reason}`);
-      // Refund the held funds. If this itself errors, leave the row APPROVED for
-      // the next run rather than risk a double state change.
+      console.error(`[withdrawal-signer] broadcast FAILED ${w.id}: ${reason}`);
       const { error: fErr } = await supabase.rpc("withdrawal_mark_failed", {
         p_id: w.id,
         p_reason: reason,
       });
       if (fErr) {
+        // The refund itself failed; the row is left SENDING. It did NOT broadcast,
+        // so it is safe to refund by hand later, but we never auto-touch a SENDING
+        // row — flag it for reconciliation.
+        stuck += 1;
         console.error(
-          `[withdrawal-signer] could not mark ${w.id} failed: ${fErr.message}`,
+          `[withdrawal-signer] could not refund ${w.id} after a failed ` +
+            `broadcast: ${fErr.message} — left SENDING for manual reconciliation`,
         );
       } else {
         failed += 1;
       }
+      continue;
     }
+
+    // 3. POINT OF NO RETURN: the broadcast succeeded, the funds are gone. From here
+    //    we must NEVER refund. If the SENT bookkeeping fails, park the row in
+    //    SENDING and alarm — a human reconciles it; auto-retry would double-send.
+    const { error: sErr } = await supabase.rpc("withdrawal_mark_sent", {
+      p_id: w.id,
+      p_tx_hash: txHash,
+    });
+    if (sErr) {
+      stuck += 1;
+      // Best-effort: stamp the broadcast hash onto the parked row so the admin
+      // reconciliation screen can show it (and the operator can confirm it landed
+      // on-chain) without digging through logs. Scoped to the still-SENDING row in
+      // SQL so it can't disturb a row another path already settled. If this also
+      // fails, the hash is still in the log line below.
+      const { error: stampErr } = await supabase.rpc("withdrawal_stamp_send_tx", {
+        p_id: w.id,
+        p_tx_hash: txHash,
+      });
+      if (stampErr) {
+        console.error(
+          `[withdrawal-signer] could not stamp tx on ${w.id}: ${stampErr.message}`,
+        );
+      }
+      console.error(
+        `[withdrawal-signer] CRITICAL: ${w.id} broadcast tx=${txHash} but ` +
+          `mark_sent failed: ${sErr.message}. Left SENDING — reconcile by hand, ` +
+          `DO NOT auto-retry.`,
+      );
+      continue;
+    }
+    sent += 1;
+    console.info(`[withdrawal-signer] sent ${w.id} tx=${txHash}`);
   }
 
   // Advance broadcast withdrawals to CONFIRMED once the chain confirms them.
@@ -202,5 +275,60 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
     }
   }
 
-  return { sent, failed, confirmed };
+  return { sent, failed, confirmed, stuck };
+}
+
+/**
+ * Withdrawals parked in SENDING — the signer claimed and (in the dangerous case)
+ * broadcast them, but the SENT/FAILED bookkeeping didn't complete. They are NOT
+ * auto-processed (that risks a double-send), so an admin must reconcile each
+ * against the chain. Service-role read; oldest first. A non-empty list is an alarm.
+ */
+export async function fetchStuckWithdrawals(): Promise<WithdrawalRow[]> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase
+    .from("withdrawals")
+    .select(WITHDRAWAL_COLUMNS)
+    .eq("status", "SENDING")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`failed to load in-flight withdrawals: ${error.message}`);
+  return (data ?? []) as WithdrawalRow[];
+}
+
+/**
+ * Admin resolves a stuck (SENDING) withdrawal as actually sent — the operator
+ * verified the transfer on-chain. Debits the hold and records it, exactly like the
+ * signer's own mark_sent. SQL re-checks is_admin. Requires the verified tx hash.
+ */
+export async function reconcileWithdrawalSent(
+  id: string,
+  adminId: string,
+  txHash: string,
+): Promise<void> {
+  const supabase = createAdminSupabase();
+  const { error } = await supabase.rpc("withdrawal_reconcile_sent", {
+    p_id: id,
+    p_admin: adminId,
+    p_tx_hash: txHash,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Admin resolves a stuck (SENDING) withdrawal as never sent — the operator
+ * confirmed no transfer landed on-chain. Refunds the held funds and marks it
+ * FAILED. SQL re-checks is_admin.
+ */
+export async function reconcileWithdrawalRefund(
+  id: string,
+  adminId: string,
+  reason: string,
+): Promise<void> {
+  const supabase = createAdminSupabase();
+  const { error } = await supabase.rpc("withdrawal_reconcile_refund", {
+    p_id: id,
+    p_admin: adminId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
 }

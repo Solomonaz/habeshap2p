@@ -2,7 +2,11 @@ import "server-only";
 import { getServerEnv } from "@/lib/env";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import { TRON_NETWORK } from "./config";
-import type { ChainProvider, HotWalletReserve } from "./provider";
+import type {
+  ChainProvider,
+  EnergySnapshot,
+  HotWalletReserve,
+} from "./provider";
 import { StubChainProvider } from "./stub";
 import { TronGridChainProvider } from "./tron";
 
@@ -11,6 +15,7 @@ export type {
   IncomingTransfer,
   SendResult,
   HotWalletReserve,
+  EnergySnapshot,
   SweepOutcome,
 } from "./provider";
 export {
@@ -92,6 +97,31 @@ export async function fetchHotWalletReserve(): Promise<{
     return {
       live: true,
       reserve: null,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * Hot-wallet Energy snapshot for the admin staking controls. Like
+ * fetchHotWalletReserve: live on-chain Energy when live payments are on, or a
+ * neutral "test mode" marker otherwise. Never throws.
+ */
+export async function fetchHotWalletEnergy(): Promise<{
+  live: boolean;
+  energy: EnergySnapshot | null;
+  error: string | null;
+}> {
+  if (!(await isLivePaymentsEnabled())) {
+    return { live: false, energy: null, error: null };
+  }
+  try {
+    const energy = await getLiveProvider().getHotWalletEnergy();
+    return { live: true, energy, error: null };
+  } catch (err) {
+    return {
+      live: true,
+      energy: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }

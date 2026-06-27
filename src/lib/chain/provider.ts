@@ -1,4 +1,5 @@
 import type { TronNetwork } from "./config";
+import type { SweepStrategy } from "@/lib/settings";
 
 /**
  * The seam between our ledger logic and the actual Tron chain.
@@ -38,16 +39,38 @@ export type AccountBalances = {
 export type HotWalletReserve = AccountBalances & { address: string };
 
 /**
- * Result of attempting to sweep one deposit address into the hot wallet:
- *   swept   — USDT was forwarded to the hot wallet (txHash + amount).
- *   gassed  — the address held USDT but lacked the TRX to move it, so we sent it
- *             gas this run; it'll be swept on a later run once the gas confirms.
- *   skipped — nothing to do (no USDT, or below the dust floor).
+ * Hot-wallet Energy snapshot (migration 0029 — staking strategy). `frozenTrx` is
+ * the TRX staked for Energy via FreezeBalanceV2; `energyLimit`/`energyUsed` come
+ * from the account's resources. All exact strings / integers — never floats.
+ */
+export type EnergySnapshot = {
+  /** Total Energy the account can draw on (from staked TRX + delegations). */
+  energyLimit: number;
+  /** Energy already consumed in the current window. */
+  energyUsed: number;
+  /** Energy currently available (limit − used). */
+  energyAvailable: number;
+  /** TRX frozen (staked) for Energy, as an exact decimal string. */
+  frozenTrx: string;
+};
+
+/**
+ * Result of attempting to sweep one deposit address into the hot wallet. The new
+ * Energy strategies (migration 0029) provision Energy on one run, then forward on
+ * the next — so a sweep is a two-phase operation that NEVER burns TRX:
+ *   swept     — USDT was forwarded to the hot wallet (txHash + amount).
+ *   delegated — staking: Energy was delegated to the address this run; it'll be
+ *               swept on a later run once the delegation confirms.
+ *   rented    — rental: Energy was rented to the address this run; swept later.
+ *   skipped   — nothing to do (no USDT), pooled mode (no per-user sweep), or the
+ *               strategy couldn't provision Energy (reason carries why). Funds are
+ *               left in place for a later run — we never fall back to burning TRX.
  */
 export type SweepOutcome =
   | { status: "swept"; txHash: string; amountUsdt: string }
-  | { status: "gassed"; txHash: string }
-  | { status: "skipped" };
+  | { status: "delegated"; txHash: string }
+  | { status: "rented"; txHash?: string }
+  | { status: "skipped"; reason?: string };
 
 export interface ChainProvider {
   readonly network: TronNetwork;
@@ -84,10 +107,34 @@ export interface ChainProvider {
   /**
    * Consolidate one per-user deposit address into the hot wallet (the "sweeper").
    * Deposits land at derived addresses but withdrawals pay from the hot wallet,
-   * so received USDT must be forwarded there to keep payout liquidity. Derives
-   * the address's key from the deposit mnemonic, tops up gas from the hot wallet
-   * when needed, and forwards the full USDT balance. Never touches the internal
-   * ledger — the user was already credited at deposit time.
+   * so received USDT must be forwarded there to keep payout liquidity. The
+   * `strategy` selects how the outbound transfer's Energy is provisioned:
+   *   - staking: delegate Energy from the hot wallet's frozen TRX (two-phase).
+   *   - rental:  rent Energy from an external market (two-phase).
+   *   - pooled:  no-op (pooled mode has no per-user addresses to sweep).
+   * NEVER sends spendable TRX / burns Energy. Never touches the internal ledger —
+   * the user was already credited at deposit time.
    */
-  sweepDepositAddress(userId: string, fromAddress: string): Promise<SweepOutcome>;
+  sweepDepositAddress(
+    userId: string,
+    fromAddress: string,
+    strategy: SweepStrategy,
+  ): Promise<SweepOutcome>;
+
+  /**
+   * Hot-wallet Energy snapshot for the ops console + the staking strategy. Read-only.
+   */
+  getHotWalletEnergy(): Promise<EnergySnapshot>;
+
+  /**
+   * Stake (FreezeBalanceV2) `amountTrx` of the hot wallet's TRX for Energy so it
+   * can be delegated to deposit addresses. Returns the broadcast tx hash.
+   */
+  freezeForEnergy(amountTrx: string): Promise<SendResult>;
+
+  /**
+   * Unstake (UnfreezeBalanceV2) `amountTrx` of the hot wallet's Energy stake.
+   * Returns the broadcast tx hash. (Unfrozen TRX has the network's unlock delay.)
+   */
+  unfreezeEnergy(amountTrx: string): Promise<SendResult>;
 }

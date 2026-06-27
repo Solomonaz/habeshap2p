@@ -1,8 +1,10 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import type { SweepStrategy } from "@/lib/settings";
 import type { TronNetwork } from "./config";
 import type {
   ChainProvider,
+  EnergySnapshot,
   HotWalletReserve,
   IncomingTransfer,
   SendResult,
@@ -77,8 +79,26 @@ export class StubChainProvider implements ChainProvider {
   async sweepDepositAddress(
     _userId: string,
     _fromAddress: string,
+    _strategy: SweepStrategy,
   ): Promise<SweepOutcome> {
     // No chain to sweep in test mode.
-    return { status: "skipped" };
+    return { status: "skipped", reason: "test mode" };
+  }
+
+  async getHotWalletEnergy(): Promise<EnergySnapshot> {
+    // No real hot wallet under the stub — report zeros.
+    return { energyLimit: 0, energyUsed: 0, energyAvailable: 0, frozenTrx: "0" };
+  }
+
+  async freezeForEnergy(_amountTrx: string): Promise<SendResult> {
+    throw new Error(
+      "StubChainProvider cannot stake TRX for Energy — configure a real chain provider.",
+    );
+  }
+
+  async unfreezeEnergy(_amountTrx: string): Promise<SendResult> {
+    throw new Error(
+      "StubChainProvider cannot unstake Energy — configure a real chain provider.",
+    );
   }
 }

@@ -10,17 +10,23 @@ import {
 } from "@/lib/chain";
 import { ensureDepositAddress } from "@/lib/deposits";
 import { fetchWithdrawalsForUser } from "@/lib/withdrawals";
-import { isLivePaymentsEnabled, getTradePolicy } from "@/lib/settings";
+import {
+  isLivePaymentsEnabled,
+  getTradePolicy,
+  getSweepStrategy,
+} from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import Link from "next/link";
 import { MerchantBond } from "./merchant-bond";
 import { WithdrawForm } from "./withdraw-form";
+import { PooledDeposit } from "./pooled-deposit";
 import { devFaucet } from "./actions";
 
 const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: "Awaiting admin review",
   APPROVED: "Approved — queued to send",
+  SENDING: "Sending — broadcasting on-chain",
   SENT: "Broadcast — awaiting confirmation",
   CONFIRMED: "Confirmed on-chain",
   REJECTED: "Rejected — funds returned",
@@ -65,18 +71,23 @@ export default async function DashboardPage() {
   const isFrozen = accountStatus === "FROZEN";
   const isBanned = accountStatus === "BANNED";
 
-  // Derive + persist a deposit address on first visit, then list the user's
-  // withdrawals (both run server-side; the read is RLS-scoped to this user).
-  const depositAddress = await ensureDepositAddress(supabase, user.id);
-  const withdrawals = await fetchWithdrawalsForUser(supabase, user.id);
-
-  // The admin's runtime switch (migration 0018). In TEST mode the dev faucet is
-  // offered; in LIVE mode it's replaced by the real on-chain deposit flow.
-  // The trade policy (migration 0021) drives the tier/limit/bond figures shown.
-  const [livePayments, tradePolicy] = await Promise.all([
+  // The admin's runtime switches: live payments (migration 0018), trade policy
+  // (0021), and the sweep strategy (0029). The sweep strategy decides the deposit
+  // UX — pooled mode uses one shared address + a unique amount, every other
+  // strategy gives the user a stable per-user deposit address.
+  const [livePayments, tradePolicy, sweepStrategy] = await Promise.all([
     isLivePaymentsEnabled(),
     getTradePolicy(),
+    getSweepStrategy(),
   ]);
+
+  // Per-user deposit address only applies to non-pooled strategies. In pooled
+  // mode there is no per-user address, so we don't derive one.
+  const depositAddress =
+    sweepStrategy === "pooled"
+      ? null
+      : await ensureDepositAddress(supabase, user.id);
+  const withdrawals = await fetchWithdrawalsForUser(supabase, user.id);
 
   const isMerchant = profile?.is_merchant ?? false;
   const completedTrades = profile?.completed_trades ?? 0;
@@ -217,20 +228,27 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
-        <h2 className="text-sm font-medium text-ink">Deposit USDT</h2>
-        <p className="mt-1 text-xs text-ink-faint">
-          Send TRC-20 USDT to this address. It&apos;s credited after{" "}
-          {DEPOSIT_MIN_CONFIRMATIONS} confirmations.
-        </p>
-        <p className="mt-3 break-all rounded-md bg-paper-sunken px-3 py-2 font-amount text-sm text-ink">
-          {depositAddress}
-        </p>
-        <p className="mt-2 text-xs text-amber">
-          Only send USDT on {TRON_NETWORK_LABEL[TRON_NETWORK]}. Funds sent on any
-          other network or token are unrecoverable.
-        </p>
-      </section>
+      {sweepStrategy === "pooled" ? (
+        <PooledDeposit
+          networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
+          minConfirmations={DEPOSIT_MIN_CONFIRMATIONS}
+        />
+      ) : (
+        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
+          <h2 className="text-sm font-medium text-ink">Deposit USDT</h2>
+          <p className="mt-1 text-xs text-ink-faint">
+            Send TRC-20 USDT to this address. It&apos;s credited after{" "}
+            {DEPOSIT_MIN_CONFIRMATIONS} confirmations.
+          </p>
+          <p className="mt-3 break-all rounded-md bg-paper-sunken px-3 py-2 font-amount text-sm text-ink">
+            {depositAddress}
+          </p>
+          <p className="mt-2 text-xs text-amber">
+            Only send USDT on {TRON_NETWORK_LABEL[TRON_NETWORK]}. Funds sent on any
+            other network or token are unrecoverable.
+          </p>
+        </section>
+      )}
 
       <WithdrawForm
         available={available}

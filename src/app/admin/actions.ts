@@ -7,7 +7,12 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
 import { resolveDispute } from "@/lib/disputes";
 import { reinstateAccount } from "@/lib/accounts";
-import { approveWithdrawal, rejectWithdrawal } from "@/lib/withdrawals";
+import {
+  approveWithdrawal,
+  rejectWithdrawal,
+  reconcileWithdrawalSent,
+  reconcileWithdrawalRefund,
+} from "@/lib/withdrawals";
 import { approveKyc, rejectKyc } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
 import {
@@ -15,7 +20,11 @@ import {
   setPlatformFee,
   setTradePolicy,
   setOrderTtlMinutes,
+  setSweepStrategy,
+  isLivePaymentsEnabled,
+  type SweepStrategy,
 } from "@/lib/settings";
+import { getChainProvider } from "@/lib/chain";
 import { isTronConfigured } from "@/lib/env";
 import { toMicros } from "@/lib/money";
 import { DISPUTE_RESOLUTIONS } from "@/types/domain";
@@ -214,6 +223,106 @@ export async function rejectWithdrawalAction(
   await recordAdminAction({
     adminId: user.id,
     action: "withdrawal_reject",
+    targetType: "withdrawal",
+    targetId: parsed.data.withdrawalId,
+    detail: reason,
+  });
+
+  revalidatePath("/admin/withdrawals");
+  return {};
+}
+
+// ── Reconcile a stuck (SENDING) withdrawal ───────────────────────────────────
+// A SENDING row is one the signer claimed but couldn't finish recording, so its
+// fate (sent vs. not) is unknown until an admin checks the chain. These two
+// actions are the resolution: confirm it sent (with the verified tx hash) or
+// confirm it didn't and refund. Same triple authorization as approve/reject.
+const reconcileSentSchema = z.object({
+  withdrawalId: z.string().uuid(),
+  txHash: z.string().trim().min(1, "Enter the on-chain tx hash").max(120),
+});
+const reconcileRefundSchema = z.object({
+  withdrawalId: z.string().uuid(),
+  reason: z.string().max(500).optional(),
+});
+
+export async function reconcileWithdrawalSentAction(
+  _prev: WithdrawalReviewState,
+  formData: FormData,
+): Promise<WithdrawalReviewState> {
+  const parsed = reconcileSentSchema.safeParse({
+    withdrawalId: formData.get("withdrawalId"),
+    txHash: formData.get("txHash"),
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await reconcileWithdrawalSent(
+      parsed.data.withdrawalId,
+      user.id,
+      parsed.data.txHash,
+    );
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Reconcile failed" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_reconcile_sent",
+    targetType: "withdrawal",
+    targetId: parsed.data.withdrawalId,
+    detail: `tx ${parsed.data.txHash}`,
+  });
+
+  revalidatePath("/admin/withdrawals");
+  return {};
+}
+
+export async function reconcileWithdrawalRefundAction(
+  _prev: WithdrawalReviewState,
+  formData: FormData,
+): Promise<WithdrawalReviewState> {
+  const parsed = reconcileRefundSchema.safeParse({
+    withdrawalId: formData.get("withdrawalId"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  const reason =
+    parsed.data.reason?.trim() || "Reconciled by admin: did not broadcast";
+  try {
+    await reconcileWithdrawalRefund(
+      parsed.data.withdrawalId,
+      user.id,
+      reason,
+    );
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Reconcile failed" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_reconcile_refund",
     targetType: "withdrawal",
     targetId: parsed.data.withdrawalId,
     detail: reason,
@@ -546,6 +655,144 @@ export async function setOrderTtlAction(
   revalidatePath("/admin/settings");
   revalidatePath("/market");
   return { ok: true };
+}
+
+// The deposit-gas strategy (migration 0029). pooledAddress only applies to the
+// 'pooled' strategy; blank means "use the hot-wallet address".
+const sweepStrategySchema = z.object({
+  strategy: z.enum(["staking", "rental", "pooled"]),
+  pooledAddress: z.string().trim().optional(),
+});
+
+export type SweepStrategyState = { error?: string; ok?: boolean };
+
+/**
+ * Admin selects how the sweeper provisions Energy (or whether it pools deposits
+ * and skips sweeping). Same triple authorization as every other admin action
+ * (route guard, re-check here, and the SQL `set_sweep_strategy` re-checks
+ * is_admin). Removes the old TRX-burn top-up entirely.
+ */
+export async function setSweepStrategyAction(
+  _prev: SweepStrategyState,
+  formData: FormData,
+): Promise<SweepStrategyState> {
+  const parsed = sweepStrategySchema.safeParse({
+    strategy: formData.get("strategy"),
+    pooledAddress: formData.get("pooledAddress") ?? "",
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  const strategy = parsed.data.strategy as SweepStrategy;
+  const pooledAddress =
+    strategy === "pooled" ? parsed.data.pooledAddress || null : null;
+
+  try {
+    await setSweepStrategy(user.id, strategy, pooledAddress);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the sweep strategy",
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "sweep_strategy_set",
+    targetType: "platform_settings",
+    detail:
+      `strategy ${strategy}` +
+      (pooledAddress ? `; pooled address ${pooledAddress}` : ""),
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+// Freeze/unfreeze the hot wallet's TRX for Energy (staking strategy). Amount is a
+// positive TRX decimal string.
+const TRX_AMOUNT_RE = /^\d+(\.\d+)?$/;
+const energyStakeSchema = z.object({
+  amount: z
+    .string()
+    .trim()
+    .refine((s) => TRX_AMOUNT_RE.test(s) && Number(s) > 0, "Enter a positive TRX amount"),
+});
+
+export type EnergyStakeState = { error?: string; ok?: boolean; txHash?: string };
+
+/**
+ * Admin stakes (FreezeBalanceV2) hot-wallet TRX for Energy so the staking sweep
+ * strategy can delegate it to deposit addresses. Requires live payments to be on
+ * (the stub can't move real funds). Triple-authorized like every admin action.
+ */
+export async function freezeEnergyAction(
+  _prev: EnergyStakeState,
+  formData: FormData,
+): Promise<EnergyStakeState> {
+  return energyStakeMutation(formData, "freeze");
+}
+
+/** Admin unstakes (UnfreezeBalanceV2) hot-wallet Energy. */
+export async function unfreezeEnergyAction(
+  _prev: EnergyStakeState,
+  formData: FormData,
+): Promise<EnergyStakeState> {
+  return energyStakeMutation(formData, "unfreeze");
+}
+
+async function energyStakeMutation(
+  formData: FormData,
+  op: "freeze" | "unfreeze",
+): Promise<EnergyStakeState> {
+  const parsed = energyStakeSchema.safeParse({ amount: formData.get("amount") ?? "" });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  if (!(await isLivePaymentsEnabled())) {
+    return { error: "Enable live payments before staking TRX for Energy." };
+  }
+
+  let txHash: string;
+  try {
+    const provider = await getChainProvider();
+    const result =
+      op === "freeze"
+        ? await provider.freezeForEnergy(parsed.data.amount)
+        : await provider.unfreezeEnergy(parsed.data.amount);
+    txHash = result.txHash;
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : `Could not ${op} TRX for Energy`,
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: op === "freeze" ? "energy_freeze" : "energy_unfreeze",
+    targetType: "platform_settings",
+    detail: `${op} ${parsed.data.amount} TRX for Energy; tx=${txHash}`,
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true, txHash };
 }
 
 const kycSchema = z.object({
