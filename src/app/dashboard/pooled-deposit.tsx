@@ -83,7 +83,7 @@ export function PooledDeposit({
             className="mt-0.5 rounded border-paper-border text-ink focus:ring-buy"
           />
           <span className="text-xs text-ink-soft">
-            I confirm that my exchange network withdrawal fee will <strong>NOT</strong> be deducted from the requested deposit amount.
+            confirm
           </span>
         </label>
       </form>
