@@ -5,12 +5,13 @@ import { MobileMenu } from "@/components/mobile-menu";
 import { OrderNotifications } from "@/components/order-notifications";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { initialsFromName, type AccountIdentity } from "@/lib/identity";
+import { navIcon } from "@/components/nav-icons";
 
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
-// "Order book" is intentionally omitted: the HabeshaP2P logo already links to
-// /market, so a separate nav item would be redundant.
+// Home (the order book at /market) leads the nav; the logo also links there.
 const NAV: { href: string; label: string; key: Page }[] = [
+  { href: "/market", label: "Home", key: "market" },
   { href: "/orders", label: "Orders", key: "orders" },
   { href: "/market/mine", label: "My ads", key: "mine" },
   { href: "/dashboard", label: "Account", key: "dashboard" },
@@ -73,12 +74,15 @@ export async function SiteHeader({
                   href={item.href}
                   aria-current={isActive ? "page" : undefined}
                   className={
-                    "relative rounded-lg px-3 py-2 text-sm font-medium transition-colors " +
+                    "relative flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors " +
                     (isActive
                       ? "text-ink"
                       : "text-ink-muted hover:bg-paper-sunken/60 hover:text-ink")
                   }
                 >
+                  <span className={isActive ? "text-amber" : ""}>
+                    {navIcon(item.key)}
+                  </span>
                   {item.label}
                   {isActive && (
                     <span

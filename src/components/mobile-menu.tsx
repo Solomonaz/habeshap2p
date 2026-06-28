@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { signOut } from "@/app/actions";
+import { navIcon } from "@/components/nav-icons";
 import type { AccountIdentity } from "@/lib/identity";
 
 type NavItem = { href: string; label: string; key: string };
@@ -113,12 +114,15 @@ export function MobileMenu({
                 onClick={() => setOpen(false)}
                 aria-current={isActive ? "page" : undefined}
                 className={
-                  "block px-5 py-3 text-sm font-medium transition-colors " +
+                  "flex items-center gap-3 px-5 py-3 text-sm font-medium transition-colors " +
                   (isActive
                     ? "bg-paper-sunken text-ink"
                     : "text-ink-muted hover:bg-paper-sunken/60 hover:text-ink")
                 }
               >
+                <span className={isActive ? "text-amber" : ""}>
+                  {navIcon(item.key)}
+                </span>
                 {item.label}
               </Link>
             );
