@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/actions";
 import { Logo } from "@/components/logo";
+import { NotificationBell } from "@/components/notification-bell";
+import type { NotificationRow } from "@/lib/notifications";
 import type { AccountIdentity } from "@/lib/identity";
 
 /**
@@ -169,9 +171,13 @@ function SidebarInner({
 
 export function AdminShell({
   account,
+  userId,
+  notifications,
   children,
 }: {
   account: AccountIdentity;
+  userId?: string;
+  notifications?: NotificationRow[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -225,6 +231,9 @@ export function AdminShell({
           </button>
 
           <div className="flex items-center gap-2.5 sm:ml-auto">
+            {userId && (
+              <NotificationBell userId={userId} initial={notifications ?? []} />
+            )}
             <span className="hidden items-center gap-2 rounded-full border border-paper-border bg-paper-sunken/60 py-1 pl-1 pr-3 sm:inline-flex">
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-xs font-bold text-paper">
                 {account.initials}

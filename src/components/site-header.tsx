@@ -6,6 +6,8 @@ import { OrderNotifications } from "@/components/order-notifications";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { initialsFromName, type AccountIdentity } from "@/lib/identity";
 import { navIcon } from "@/components/nav-icons";
+import { NotificationBell } from "@/components/notification-bell";
+import { fetchNotifications, type NotificationRow } from "@/lib/notifications";
 
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
@@ -34,18 +36,23 @@ export async function SiteHeader({
   // there we only need the name. `account` (email/handle) stays the fallback.
   let showAdmin = isAdmin ?? false;
   let display = account;
+  let notifications: NotificationRow[] = [];
   if (userId) {
     const supabase = await createServerSupabase();
-    const { data } = await supabase
-      .from("users")
-      .select("full_name, is_admin")
-      .eq("id", userId)
-      .maybeSingle();
+    const [{ data }, notes] = await Promise.all([
+      supabase
+        .from("users")
+        .select("full_name, is_admin")
+        .eq("id", userId)
+        .maybeSingle(),
+      fetchNotifications(supabase, userId),
+    ]);
     if (isAdmin === undefined) showAdmin = data?.is_admin === true;
     const name = data?.full_name?.trim();
     if (name) {
       display = { label: name, initials: initialsFromName(name) };
     }
+    notifications = notes;
   }
 
   const nav = showAdmin
@@ -98,6 +105,9 @@ export async function SiteHeader({
 
         {/* Account cluster */}
         <div className="flex items-center gap-2.5">
+          {userId && (
+            <NotificationBell userId={userId} initial={notifications} />
+          )}
           {display && (
             <span className="hidden items-center gap-2 rounded-full border border-paper-border bg-paper-sunken/60 py-1 pl-1 pr-3 sm:inline-flex">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper">

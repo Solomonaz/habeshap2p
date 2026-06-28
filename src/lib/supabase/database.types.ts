@@ -525,6 +525,38 @@ export type Database = {
           },
         ];
       };
+      notifications: {
+        // In-app notification feed (migration 0034). Written by notify/notify_admins
+        // (service role); users read their own; mark_notifications_read updates them.
+        Row: {
+          id: string;
+          user_id: string;
+          type: string;
+          title: string;
+          body: string | null;
+          href: string | null;
+          audience: string; // 'user' | 'admin'
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          user_id: string;
+          type: string;
+          title: string;
+          body?: string | null;
+          href?: string | null;
+          audience?: string;
+        };
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       public_profiles: {
@@ -543,6 +575,30 @@ export type Database = {
       };
     };
     Functions: {
+      notify: {
+        Args: {
+          p_user: string;
+          p_type: string;
+          p_title: string;
+          p_body?: string | null;
+          p_href?: string | null;
+          p_audience?: string;
+        };
+        Returns: undefined;
+      };
+      notify_admins: {
+        Args: {
+          p_type: string;
+          p_title: string;
+          p_body?: string | null;
+          p_href?: string | null;
+        };
+        Returns: undefined;
+      };
+      mark_notifications_read: {
+        Args: { p_ids?: string[] | null };
+        Returns: undefined;
+      };
       // Money amounts are passed as decimal strings to preserve exactness.
       ledger_deposit: {
         Args: { p_user: string; p_amount: string };

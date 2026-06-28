@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { submitKyc } from "@/lib/kyc";
+import { notifyAdmins } from "@/lib/notifications";
 
 // The images are uploaded to the private `kyc` bucket on the client (the storage
 // RLS only admits objects under the user's own folder), and their object paths
@@ -57,6 +58,14 @@ export async function submitVerification(
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Submission failed" };
   }
+
+  // Alert admins there's a new identity submission to review.
+  await notifyAdmins({
+    type: "kyc_submitted",
+    title: "New identity verification",
+    body: `${parsed.data.fullName} submitted documents for review.`,
+    href: "/admin/kyc",
+  });
 
   revalidatePath("/verify");
   return {};

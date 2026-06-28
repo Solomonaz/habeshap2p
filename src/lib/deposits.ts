@@ -5,6 +5,8 @@ import type { Database } from "@/lib/supabase/database.types";
 import { getServerEnv } from "@/lib/env";
 import { getChainProvider } from "@/lib/chain";
 import { getSweepStrategy, getPooledDepositAddress } from "@/lib/settings";
+import { createNotification } from "@/lib/notifications";
+import { formatUsdt } from "@/lib/money";
 
 /**
  * Deposit side of the on-chain ramp (Phase 7).
@@ -157,7 +159,16 @@ export async function pollDeposits(): Promise<DepositPollResult> {
       p_amount: t.amountUsdt,
     });
     if (cErr) throw new Error(`credit_deposit failed: ${cErr.message}`);
-    if (didCredit) credited += 1;
+    if (didCredit) {
+      credited += 1;
+      await createNotification({
+        userId,
+        type: "deposit_credited",
+        title: "Deposit received",
+        body: `${formatUsdt(t.amountUsdt)} USDT credited to your balance.`,
+        href: "/dashboard",
+      });
+    }
   }
 
   return { scanned: byAddress.size, credited, unmatched: 0 };

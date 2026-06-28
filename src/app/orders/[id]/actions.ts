@@ -13,6 +13,8 @@ import {
   freezeSellerIfDue,
 } from "@/lib/orders";
 import { openDispute } from "@/lib/disputes";
+import { createNotification, notifyAdmins } from "@/lib/notifications";
+import { formatUsdt } from "@/lib/money";
 
 const schema = z.object({
   orderId: z.string().uuid(),
@@ -69,6 +71,64 @@ export async function runOrderAction(
     }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Action failed" };
+  }
+
+  // Notify the relevant party (and admins on a dispute). Best-effort — a
+  // notification failure must never undo the action that just succeeded.
+  try {
+    const order = await fetchOrder(supabase, parsed.data.orderId);
+    if (order) {
+      const amt = formatUsdt(order.amount_usdt);
+      const href = `/orders/${order.id}`;
+      const counterparty =
+        order.buyer_id === user.id ? order.seller_id : order.buyer_id;
+      switch (parsed.data.intent) {
+        case "paid":
+          await createNotification({
+            userId: order.seller_id,
+            type: "order_paid",
+            title: "Buyer marked payment sent",
+            body: `${amt} USDT — confirm receipt, then release.`,
+            href,
+          });
+          break;
+        case "release":
+          await createNotification({
+            userId: order.buyer_id,
+            type: "order_released",
+            title: "USDT released",
+            body: `${amt} USDT released to you — trade complete.`,
+            href,
+          });
+          break;
+        case "cancel":
+          await createNotification({
+            userId: counterparty,
+            type: "order_cancelled",
+            title: "Order cancelled",
+            body: `A ${amt} USDT order was cancelled.`,
+            href,
+          });
+          break;
+        case "dispute":
+          await createNotification({
+            userId: counterparty,
+            type: "order_disputed",
+            title: "Order disputed",
+            body: `A ${amt} USDT order was moved to dispute.`,
+            href,
+          });
+          await notifyAdmins({
+            type: "dispute_opened",
+            title: "New dispute opened",
+            body: `${amt} USDT order needs a ruling.`,
+            href: "/admin",
+          });
+          break;
+      }
+    }
+  } catch {
+    /* notifications are best-effort */
   }
 
   revalidatePath(`/orders/${parsed.data.orderId}`);

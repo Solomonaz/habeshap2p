@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
+import { createNotification } from "@/lib/notifications";
+import { formatUsdt } from "@/lib/money";
 import { resolveDispute } from "@/lib/disputes";
 import { reinstateAccount } from "@/lib/accounts";
 import {
@@ -80,6 +82,46 @@ export async function resolveDisputeAction(
     detail: `resolved ${parsed.data.resolution}`,
   });
 
+  // Notify both parties of the outcome (best-effort).
+  try {
+    const admin = createAdminSupabase();
+    const { data: disp } = await admin
+      .from("disputes")
+      .select("order_id")
+      .eq("id", parsed.data.disputeId)
+      .maybeSingle();
+    if (disp?.order_id) {
+      const { data: order } = await admin
+        .from("orders")
+        .select("id, buyer_id, seller_id, amount_usdt::text")
+        .eq("id", disp.order_id)
+        .maybeSingle();
+      if (order) {
+        const forBuyer = parsed.data.resolution === "FAVOUR_BUYER";
+        const amt = formatUsdt(order.amount_usdt);
+        const href = `/orders/${order.id}`;
+        await createNotification([
+          {
+            userId: forBuyer ? order.buyer_id : order.seller_id,
+            type: "dispute_resolved",
+            title: "Dispute resolved in your favour",
+            body: `${amt} USDT — the ruling went your way.`,
+            href,
+          },
+          {
+            userId: forBuyer ? order.seller_id : order.buyer_id,
+            type: "dispute_resolved",
+            title: "Dispute resolved",
+            body: `${amt} USDT — an admin ruled for the other party.`,
+            href,
+          },
+        ]);
+      }
+    }
+  } catch {
+    /* notifications are best-effort */
+  }
+
   revalidatePath("/admin");
   revalidatePath(`/admin/disputes/${parsed.data.disputeId}`);
   return {};
@@ -135,6 +177,17 @@ export async function reinstateAccountAction(
     detail: `reinstated on appeal; returned ${returned} USDT`,
   });
 
+  await createNotification({
+    userId: parsed.data.userId,
+    type: "account_reinstated",
+    title: "Account reinstated",
+    body:
+      Number(returned) > 0
+        ? `Your account is active again and ${formatUsdt(returned)} USDT was returned.`
+        : "Your account is active again — you can trade.",
+    href: "/dashboard",
+  });
+
   revalidatePath("/admin/accounts");
   if (parsed.data.disputeId) {
     revalidatePath(`/admin/disputes/${parsed.data.disputeId}`);
@@ -186,8 +239,43 @@ export async function approveWithdrawalAction(
     targetId: parsed.data.withdrawalId,
   });
 
+  await notifyWithdrawalOwner(
+    parsed.data.withdrawalId,
+    "withdrawal_approved",
+    "Withdrawal approved",
+    (amt) => `${amt} USDT approved — it will be sent shortly.`,
+  );
+
   revalidatePath("/admin/withdrawals");
   return {};
+}
+
+/** Notify the owner of a withdrawal (best-effort; looks up user + amount). */
+async function notifyWithdrawalOwner(
+  withdrawalId: string,
+  type: string,
+  title: string,
+  body: (amount: string) => string,
+): Promise<void> {
+  try {
+    const admin = createAdminSupabase();
+    const { data: w } = await admin
+      .from("withdrawals")
+      .select("user_id, amount_usdt::text")
+      .eq("id", withdrawalId)
+      .maybeSingle();
+    if (w) {
+      await createNotification({
+        userId: w.user_id,
+        type,
+        title,
+        body: body(formatUsdt(w.amount_usdt)),
+        href: "/dashboard",
+      });
+    }
+  } catch {
+    /* notifications are best-effort */
+  }
 }
 
 /**
@@ -227,6 +315,13 @@ export async function rejectWithdrawalAction(
     targetId: parsed.data.withdrawalId,
     detail: reason,
   });
+
+  await notifyWithdrawalOwner(
+    parsed.data.withdrawalId,
+    "withdrawal_rejected",
+    "Withdrawal rejected",
+    (amt) => `${amt} USDT was rejected and refunded to your balance.`,
+  );
 
   revalidatePath("/admin/withdrawals");
   return {};
@@ -838,8 +933,39 @@ export async function approveKycAction(
     targetId: parsed.data.submissionId,
   });
 
+  await notifyKycUser(
+    parsed.data.submissionId,
+    "kyc_approved",
+    "Identity verified",
+    "Your identity was approved — you can now trade.",
+    "/dashboard",
+  );
+
   revalidatePath("/admin/kyc");
   return {};
+}
+
+/** Notify a KYC submission's owner (best-effort; looks up the user). */
+async function notifyKycUser(
+  submissionId: string,
+  type: string,
+  title: string,
+  body: string,
+  href: string,
+): Promise<void> {
+  try {
+    const admin = createAdminSupabase();
+    const { data: sub } = await admin
+      .from("kyc_submissions")
+      .select("user_id")
+      .eq("id", submissionId)
+      .maybeSingle();
+    if (sub) {
+      await createNotification({ userId: sub.user_id, type, title, body, href });
+    }
+  } catch {
+    /* notifications are best-effort */
+  }
 }
 
 /** Admin denies a pending submission; the user may resubmit. */
@@ -876,6 +1002,14 @@ export async function rejectKycAction(
     targetId: parsed.data.submissionId,
     detail: reason,
   });
+
+  await notifyKycUser(
+    parsed.data.submissionId,
+    "kyc_rejected",
+    "Verification not approved",
+    `Your submission was rejected — you can resubmit. ${reason}`,
+    "/verify",
+  );
 
   revalidatePath("/admin/kyc");
   return {};

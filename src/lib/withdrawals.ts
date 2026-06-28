@@ -2,8 +2,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
-import { toMicros } from "@/lib/money";
+import { toMicros, formatUsdt } from "@/lib/money";
 import { getChainProvider, WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
+import { createNotification } from "@/lib/notifications";
 import { isValidTronAddress } from "@/lib/chain/address";
 
 export type WithdrawalRow = Database["public"]["Tables"]["withdrawals"]["Row"];
@@ -153,7 +154,7 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
 
   const { data: approved, error } = await supabase
     .from("withdrawals")
-    .select("id, to_address, amount_usdt::text")
+    .select("id, user_id, to_address, amount_usdt::text")
     .eq("status", "APPROVED")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`failed to load approved withdrawals: ${error.message}`);
@@ -163,6 +164,7 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
   let stuck = 0;
   for (const w of (approved ?? []) as {
     id: string;
+    user_id: string;
     to_address: string;
     amount_usdt: string;
   }[]) {
@@ -251,6 +253,13 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
     }
     sent += 1;
     console.info(`[withdrawal-signer] sent ${w.id} tx=${txHash}`);
+    await createNotification({
+      userId: w.user_id,
+      type: "withdrawal_sent",
+      title: "Withdrawal sent",
+      body: `${formatUsdt(w.amount_usdt)} USDT broadcast on-chain — awaiting confirmation.`,
+      href: "/dashboard",
+    });
   }
 
   // Advance broadcast withdrawals to CONFIRMED once the chain confirms them.

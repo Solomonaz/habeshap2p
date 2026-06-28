@@ -3,9 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
-import { toMicros } from "@/lib/money";
+import { toMicros, formatUsdt } from "@/lib/money";
 import { postBond, releaseBond } from "@/lib/merchant";
 import { requestWithdrawal } from "@/lib/withdrawals";
+import { WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
+import { notifyAdmins } from "@/lib/notifications";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import {
   createPooledDepositIntent,
@@ -199,6 +201,16 @@ export async function requestWithdrawalAction(
     return {
       error: e instanceof Error ? e.message : "Failed to request withdrawal.",
     };
+  }
+
+  // Large withdrawals are held for manual sign-off — alert the admins.
+  if (Number(amount) >= WITHDRAWAL_APPROVAL_THRESHOLD) {
+    await notifyAdmins({
+      type: "withdrawal_pending",
+      title: "Withdrawal needs approval",
+      body: `${formatUsdt(amount)} USDT is awaiting your sign-off.`,
+      href: "/admin/withdrawals",
+    });
   }
 
   revalidatePath("/dashboard");

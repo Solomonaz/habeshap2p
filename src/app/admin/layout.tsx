@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { accountIdentity } from "@/lib/identity";
+import { fetchNotifications } from "@/lib/notifications";
 import { AdminShell } from "@/components/admin/admin-shell";
 
 /**
@@ -28,6 +29,11 @@ export default async function AdminLayout({
   if (profile?.is_admin !== true) redirect("/market");
 
   const account = accountIdentity(user, profile?.full_name);
+  const notifications = await fetchNotifications(supabase, user.id);
 
-  return <AdminShell account={account}>{children}</AdminShell>;
+  return (
+    <AdminShell account={account} userId={user.id} notifications={notifications}>
+      {children}
+    </AdminShell>
+  );
 }

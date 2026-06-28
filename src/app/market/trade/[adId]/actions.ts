@@ -3,8 +3,10 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { createOrder } from "@/lib/orders";
+import { createOrder, fetchOrder } from "@/lib/orders";
 import { fetchPublicProfile } from "@/lib/ads";
+import { createNotification } from "@/lib/notifications";
+import { formatUsdt } from "@/lib/money";
 import { traderName } from "@/lib/handle";
 import { PAYMENT_METHODS } from "@/types/domain";
 
@@ -84,6 +86,25 @@ export async function openOrder(
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not open order";
     return { error: await humanizeOrderError(supabase, message, user.id) };
+  }
+
+  // Tell the ad owner (the counterparty) a trade just opened against their ad.
+  // Best-effort: a notification hiccup must never fail a created order.
+  try {
+    const order = await fetchOrder(supabase, orderId);
+    if (order) {
+      const owner =
+        order.buyer_id === user.id ? order.seller_id : order.buyer_id;
+      await createNotification({
+        userId: owner,
+        type: "order_created",
+        title: "New order on your ad",
+        body: `${formatUsdt(order.amount_usdt)} USDT — open it to proceed.`,
+        href: `/orders/${order.id}`,
+      });
+    }
+  } catch {
+    /* notifications are best-effort */
   }
 
   redirect(`/orders/${orderId}`);
