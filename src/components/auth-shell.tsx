@@ -30,7 +30,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
       {/* Form column */}
       <div className="flex flex-col px-6 py-10 sm:px-10">
         <Link href="/" aria-label="HabeshaP2P home" className="w-fit">
-          <Logo height={40} />
+          <Logo height={56} glow />
         </Link>
         <div className="flex flex-1 items-center justify-center py-10">
           <div className="w-full max-w-sm">{children}</div>

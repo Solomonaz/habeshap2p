@@ -77,7 +77,7 @@ export default function Home() {
     <main className="mx-auto max-w-4xl px-6 pb-20">
       {/* Top bar */}
       <header className="flex items-center justify-between py-6">
-        <Logo height={30} />
+        <Logo height={36} glow />
         <div className="flex items-center gap-2.5">
           <Link href="/login" className="btn-ghost">
             Sign in

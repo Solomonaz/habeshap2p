@@ -142,7 +142,7 @@ function SidebarInner({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2 px-3 py-5">
-        <Logo height={26} />
+        <Logo height={28} glow />
         <span className="rounded-md bg-amber/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber">
           Admin
         </span>

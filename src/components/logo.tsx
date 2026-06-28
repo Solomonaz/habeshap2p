@@ -10,10 +10,13 @@ import Image from "next/image";
  */
 export function Logo({
   height = 36,
+  glow = false,
   className = "",
 }: {
   showWordmark?: boolean;
   height?: number;
+  /** Soft gold halo around the mark, matching the site's amber ambient glow. */
+  glow?: boolean;
   className?: string;
 }) {
   return (
@@ -23,7 +26,18 @@ export function Logo({
       width={height * 3}
       height={height}
       priority
-      style={{ height, width: "auto" }}
+      style={{
+        height,
+        width: "auto",
+        // drop-shadow follows the PNG's alpha, so the glow hugs the lion-shield
+        // shape (not a box). Two layers: a tight bright core + a wide soft bloom.
+        ...(glow
+          ? {
+              filter:
+                "drop-shadow(0 0 8px rgba(252,213,53,0.45)) drop-shadow(0 0 22px rgba(240,185,11,0.25))",
+            }
+          : {}),
+      }}
       className={className}
     />
   );

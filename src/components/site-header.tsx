@@ -62,7 +62,7 @@ export async function SiteHeader({
             aria-label="HabeshaP2P home"
             className="shrink-0 rounded-md focus-visible:ring-2 focus-visible:ring-amber"
           >
-            <Logo />
+            <Logo height={38} glow />
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             {nav.map((item) => {
