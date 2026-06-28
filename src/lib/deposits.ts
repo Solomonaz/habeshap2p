@@ -232,3 +232,54 @@ async function pollPooledDeposits(
 
   return { scanned: transfers.length, credited, unmatched };
 }
+
+/**
+ * Self-service user claim: trigger an immediate on-demand poll and check if the
+ * specified transaction hash matches a deposit for this user.
+ */
+export async function claimPooledDepositByHash(
+  userId: string,
+  txHash: string,
+): Promise<{ status: "credited" | "already_credited" | "not_found" | "pending" }> {
+  const cleanHash = txHash.trim();
+  if (!cleanHash || cleanHash.length < 10) {
+    throw new Error("Invalid transaction hash format");
+  }
+
+  const admin = createAdminSupabase();
+
+  // Check if already matched to an intent
+  const { data: intent } = await admin
+    .from("deposit_intents")
+    .select("status, user_id")
+    .eq("tx_hash", cleanHash)
+    .maybeSingle();
+
+  if (intent) {
+    if (intent.user_id === userId) {
+      return { status: "already_credited" };
+    }
+    throw new Error("This transaction was already credited to another user");
+  }
+
+  // Trigger poll
+  const pollResult = await pollDeposits();
+
+  // Re-check after poll
+  const { data: recheck } = await admin
+    .from("deposit_intents")
+    .select("status, user_id")
+    .eq("tx_hash", cleanHash)
+    .maybeSingle();
+
+  if (recheck && recheck.user_id === userId) {
+    return { status: "credited" };
+  }
+
+  if (pollResult.unmatched > 0) {
+    return { status: "pending" };
+  }
+
+  return { status: "not_found" };
+}
+

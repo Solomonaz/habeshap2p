@@ -11,6 +11,7 @@ import { notifyAdmins } from "@/lib/notifications";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import {
   createPooledDepositIntent,
+  claimPooledDepositByHash,
   type PooledDepositIntent,
 } from "@/lib/deposits";
 
@@ -22,6 +23,12 @@ export type DepositIntentState = {
   error?: string;
   intent?: PooledDepositIntent;
 };
+
+export type ClaimTxState = {
+  error?: string;
+  success?: string;
+};
+
 
 /**
  * Create a pooled/omnibus deposit intent (migration 0029): reserve a unique exact
@@ -58,6 +65,51 @@ export async function createDepositIntentAction(
     };
   }
 }
+
+/**
+ * Self-service claim deposit by transaction hash.
+ */
+export async function claimDepositTxAction(
+  _prev: ClaimTxState,
+  formData: FormData,
+): Promise<ClaimTxState> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const txHash = (formData.get("txHash") ?? "").toString().trim();
+  if (!txHash) {
+    return { error: "Please enter a transaction hash." };
+  }
+
+  try {
+    const res = await claimPooledDepositByHash(user.id, txHash);
+    if (res.status === "already_credited") {
+      return { success: "This deposit was already credited to your account balance." };
+    }
+    if (res.status === "credited") {
+      revalidatePath("/dashboard");
+      return { success: "Deposit verified! Your balance has been credited." };
+    }
+    if (res.status === "pending") {
+      return {
+        error:
+          "Your transaction was found on-chain, but the exact amount does not match your active intent. An administrator has been notified to manually reconcile your deposit.",
+      };
+    }
+    return {
+      error:
+        "Transaction not found or not yet confirmed. Please verify the TxHash and ensure it has reached full network confirmation.",
+    };
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Failed to verify transaction.",
+    };
+  }
+}
+
 
 /**
  * DEV-ONLY faucet: credits the signed-in user's wallet with test USDT so the
