@@ -557,6 +557,24 @@ export type Database = {
           },
         ];
       };
+      unmatched_deposits: {
+        // Pooled deposits that matched no intent (migration 0036). Admin-only;
+        // written by record/credit/ignore RPCs.
+        Row: {
+          id: string;
+          tx_hash: string;
+          to_address: string;
+          amount_usdt: string;
+          status: string; // PENDING | CREDITED | IGNORED
+          credited_user_id: string | null;
+          resolved_by: string | null;
+          created_at: string;
+          resolved_at: string | null;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -597,6 +615,18 @@ export type Database = {
       };
       mark_notifications_read: {
         Args: { p_ids?: string[] | null };
+        Returns: undefined;
+      };
+      record_unmatched_deposit: {
+        Args: { p_tx_hash: string; p_amount: string; p_to_address: string };
+        Returns: boolean; // true iff newly recorded
+      };
+      credit_unmatched_deposit: {
+        Args: { p_admin: string; p_tx_hash: string; p_user: string };
+        Returns: string; // credited amount
+      };
+      ignore_unmatched_deposit: {
+        Args: { p_admin: string; p_tx_hash: string };
         Returns: undefined;
       };
       // Money amounts are passed as decimal strings to preserve exactness.

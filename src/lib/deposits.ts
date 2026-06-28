@@ -5,7 +5,7 @@ import type { Database } from "@/lib/supabase/database.types";
 import { getServerEnv } from "@/lib/env";
 import { getChainProvider } from "@/lib/chain";
 import { getSweepStrategy, getPooledDepositAddress } from "@/lib/settings";
-import { createNotification } from "@/lib/notifications";
+import { createNotification, notifyAdmins } from "@/lib/notifications";
 import { formatUsdt } from "@/lib/money";
 
 /**
@@ -207,6 +207,26 @@ async function pollPooledDeposits(
         `[deposits] UNMATCHED pooled transfer needs manual reconciliation: ` +
           `${t.amountUsdt} USDT tx=${t.txHash} → ${pooledAddress.slice(0, 8)}…`,
       );
+      // Persist it to the admin reconciliation queue (idempotent on tx_hash) and
+      // alert admins the first time we see it — not on every 5-minute re-poll.
+      const { data: isNew, error: rErr } = await admin.rpc(
+        "record_unmatched_deposit",
+        {
+          p_tx_hash: t.txHash,
+          p_amount: t.amountUsdt,
+          p_to_address: pooledAddress,
+        },
+      );
+      if (rErr) {
+        console.error(`[deposits] could not record unmatched: ${rErr.message}`);
+      } else if (isNew) {
+        await notifyAdmins({
+          type: "deposit_unmatched",
+          title: "Unmatched deposit",
+          body: `${formatUsdt(t.amountUsdt)} USDT arrived with no matching intent — reconcile it.`,
+          href: "/admin/unmatched",
+        });
+      }
     }
   }
 
