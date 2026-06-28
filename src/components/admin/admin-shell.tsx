@@ -76,6 +76,11 @@ const NAV: {
     icon: <Icon path={<><circle cx="12" cy="12" r="9" /><path d="M9.5 9.2a2.5 2.5 0 1 1 3 2.4c-.6.2-1 .8-1 1.6" /><path d="M12 17h.01" /></>} />,
   },
   {
+    href: "/admin/notifications",
+    label: "Notifications",
+    icon: <Icon path={<><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6" /><path d="M10.5 20a2 2 0 0 0 3 0" /></>} />,
+  },
+  {
     href: "/admin/settings",
     label: "Settings",
     icon: <Icon path={<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H7a1.6 1.6 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V7a1.6 1.6 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" /></>} />,
@@ -94,15 +99,18 @@ function isActive(pathname: string, item: (typeof NAV)[number]): boolean {
 
 function NavLinks({
   pathname,
+  unreadCount,
   onNavigate,
 }: {
   pathname: string;
+  unreadCount?: number;
   onNavigate?: () => void;
 }) {
   return (
     <nav className="flex flex-col gap-1">
       {NAV.map((item) => {
         const active = isActive(pathname, item);
+        const isNotif = item.href === "/admin/notifications";
         return (
           <Link
             key={item.href}
@@ -131,7 +139,12 @@ function NavLinks({
             >
               {item.icon}
             </span>
-            {item.label}
+            <span className="flex-1">{item.label}</span>
+            {isNotif && !!unreadCount && unreadCount > 0 && (
+              <span className="rounded-full bg-sell px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -141,9 +154,11 @@ function NavLinks({
 
 function SidebarInner({
   pathname,
+  unreadCount,
   onNavigate,
 }: {
   pathname: string;
+  unreadCount?: number;
   onNavigate?: () => void;
 }) {
   return (
@@ -158,7 +173,7 @@ function SidebarInner({
         <p className="px-3 pb-2 pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
           Console
         </p>
-        <NavLinks pathname={pathname} onNavigate={onNavigate} />
+        <NavLinks pathname={pathname} unreadCount={unreadCount} onNavigate={onNavigate} />
       </div>
       <div className="border-t border-paper-border p-3">
         <Link
@@ -174,6 +189,7 @@ function SidebarInner({
   );
 }
 
+
 export function AdminShell({
   account,
   userId,
@@ -188,11 +204,13 @@ export function AdminShell({
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const unreadCount = (notifications ?? []).filter((n) => !n.read_at).length;
+
   return (
     <div className="min-h-screen md:flex">
       {/* Desktop rail */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-paper-border bg-paper-raised md:block">
-        <SidebarInner pathname={pathname} />
+        <SidebarInner pathname={pathname} unreadCount={unreadCount} />
       </aside>
 
       {/* Mobile drawer */}
@@ -218,10 +236,12 @@ export function AdminShell({
         >
           <SidebarInner
             pathname={pathname}
+            unreadCount={unreadCount}
             onNavigate={() => setDrawerOpen(false)}
           />
         </aside>
       </div>
+
 
       <div className="min-w-0 flex-1">
         {/* Top bar */}
