@@ -15,6 +15,7 @@ import {
   signedProofUrl,
   type MessageRow,
 } from "@/lib/messages";
+import { soundEffects } from "@/lib/audio";
 
 const MAX_PROOF_BYTES = 5 * 1024 * 1024; // 5 MB
 
@@ -34,19 +35,33 @@ export function OrderChat({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState(soundEffects.isEnabled());
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    soundEffects.setEnabled(next);
+    if (next) soundEffects.playChatChime();
+  };
+
   // Merge a row in by id, keeping the list ordered and deduped (realtime can
   // echo a row we already optimistically hold from our own insert).
-  const upsert = useCallback((row: MessageRow) => {
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === row.id)) return prev;
-      return [...prev, row].sort((a, b) =>
-        a.created_at.localeCompare(b.created_at),
-      );
-    });
-  }, []);
+  const upsert = useCallback(
+    (row: MessageRow) => {
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === row.id)) return prev;
+        if (row.sender_id !== currentUserId) {
+          soundEffects.playChatChime();
+        }
+        return [...prev, row].sort((a, b) =>
+          a.created_at.localeCompare(b.created_at),
+        );
+      });
+    },
+    [currentUserId],
+  );
 
   // Live updates: any new message on this order arrives via Realtime (RLS
   // guarantees we only receive rows for orders we're a party to).
@@ -132,8 +147,19 @@ export function OrderChat({
     <section className="mt-4 rounded-card border border-paper-border bg-paper-raised">
       <header className="flex items-center justify-between border-b border-paper-border px-4 py-3">
         <h2 className="text-sm font-medium text-ink">Chat</h2>
-        <span className="text-xs text-ink-faint">with {counterpartyLabel}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-ink-faint">with {counterpartyLabel}</span>
+          <button
+            type="button"
+            onClick={toggleSound}
+            title={soundEnabled ? "Mute audio chimes" : "Enable audio chimes"}
+            className="text-xs text-ink-muted hover:text-ink transition-colors px-1 py-0.5 rounded"
+          >
+            {soundEnabled ? "🔔 Sound ON" : "🔕 Sound OFF"}
+          </button>
+        </div>
       </header>
+
 
       <div className="h-72 space-y-3 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (

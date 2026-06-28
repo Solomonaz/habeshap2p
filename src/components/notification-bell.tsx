@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { NotificationRow } from "@/lib/notifications";
+import { soundEffects } from "@/lib/audio";
 
 /**
  * The notification center: a bell with an unread badge that opens a dropdown of
@@ -41,9 +42,32 @@ export function NotificationBell({
         },
         (payload) => {
           const row = payload.new as NotificationRow;
-          setItems((prev) =>
-            prev.some((p) => p.id === row.id) ? prev : [row, ...prev].slice(0, 40),
-          );
+          setItems((prev) => {
+            if (prev.some((p) => p.id === row.id)) return prev;
+            
+            // Sound and haptic vibration for all incoming system/admin notifications
+            const type = row.type || "";
+            if (
+              type.includes("credited") ||
+              type.includes("approved") ||
+              type.includes("reinstated") ||
+              type.includes("confirmed")
+            ) {
+              soundEffects.playSuccessChime();
+            } else if (
+              type.includes("unmatched") ||
+              type.includes("rejected") ||
+              type.includes("failed") ||
+              type.includes("banned") ||
+              type.includes("frozen")
+            ) {
+              soundEffects.playAlertChime();
+            } else {
+              soundEffects.playChatChime();
+            }
+
+            return [row, ...prev].slice(0, 40);
+          });
         },
       )
       .subscribe();
@@ -51,6 +75,7 @@ export function NotificationBell({
       void supabase.removeChannel(channel);
     };
   }, [supabase, userId]);
+
 
   async function markAllRead() {
     const now = new Date().toISOString();

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatUsdt } from "@/lib/money";
 import type { OrderState } from "@/types/domain";
+import { soundEffects } from "@/lib/audio";
 
 type Toast = {
   id: string;
@@ -43,8 +44,18 @@ export function OrderNotifications({ userId }: { userId: string }) {
   const router = useRouter();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = (t: Toast) => {
+  const push = (t: Toast, state?: OrderState) => {
     setToasts((prev) => [...prev, t]);
+    
+    // Sound & Haptic notification
+    if (state === "RELEASED") {
+      soundEffects.playSuccessChime();
+    } else if (state === "DISPUTED" || state === "CANCELLED") {
+      soundEffects.playAlertChime();
+    } else {
+      soundEffects.playChatChime();
+    }
+
     if (
       typeof Notification !== "undefined" &&
       Notification.permission === "granted"
@@ -74,14 +85,17 @@ export function OrderNotifications({ userId }: { userId: string }) {
         (payload) => {
           const o = payload.new as OrderPayload;
           const iAmBuyer = o.buyer_id === userId;
-          push({
-            id: `${o.id}-created-${Date.now()}`,
-            title: "New order opened",
-            detail: `${formatUsdt(o.amount_usdt)} USDT — you are ${
-              iAmBuyer ? "buying" : "selling"
-            }`,
-            href: `/orders/${o.id}`,
-          });
+          push(
+            {
+              id: `${o.id}-created-${Date.now()}`,
+              title: "New order opened",
+              detail: `${formatUsdt(o.amount_usdt)} USDT — you are ${
+                iAmBuyer ? "buying" : "selling"
+              }`,
+              href: `/orders/${o.id}`,
+            },
+            o.state,
+          );
         },
       )
       .on(
@@ -92,12 +106,15 @@ export function OrderNotifications({ userId }: { userId: string }) {
           const prev = payload.old as Partial<OrderPayload>;
           // Only notify when the lifecycle state actually changed.
           if (prev.state === o.state) return;
-          push({
-            id: `${o.id}-${o.state}-${Date.now()}`,
-            title: STATE_TEXT[o.state] ?? "Order updated",
-            detail: `${formatUsdt(o.amount_usdt)} USDT`,
-            href: `/orders/${o.id}`,
-          });
+          push(
+            {
+              id: `${o.id}-${o.state}-${Date.now()}`,
+              title: STATE_TEXT[o.state] ?? "Order updated",
+              detail: `${formatUsdt(o.amount_usdt)} USDT`,
+              href: `/orders/${o.id}`,
+            },
+            o.state,
+          );
         },
       )
       .subscribe();
@@ -106,6 +123,7 @@ export function OrderNotifications({ userId }: { userId: string }) {
       void supabase.removeChannel(channel);
     };
   }, [supabase, userId]);
+
 
   if (toasts.length === 0) return null;
 
