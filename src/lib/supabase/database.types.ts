@@ -568,6 +568,7 @@ export type Database = {
           status: string; // PENDING | CREDITED | IGNORED
           credited_user_id: string | null;
           resolved_by: string | null;
+          resolution_note: string | null;
           created_at: string;
           resolved_at: string | null;
         };
@@ -626,6 +627,10 @@ export type Database = {
         Returns: string; // credited amount
       };
       ignore_unmatched_deposit: {
+        Args: { p_admin: string; p_tx_hash: string; p_reason?: string | null };
+        Returns: undefined;
+      };
+      unignore_unmatched_deposit: {
         Args: { p_admin: string; p_tx_hash: string };
         Returns: undefined;
       };

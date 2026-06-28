@@ -9,6 +9,7 @@ import { recordAdminAction } from "@/lib/audit";
 import {
   creditUnmatchedDeposit,
   ignoreUnmatchedDeposit,
+  unignoreUnmatchedDeposit,
   resolveUserByEmail,
 } from "@/lib/unmatched";
 
@@ -79,9 +80,51 @@ export async function creditUnmatchedAction(
   return { ok: true };
 }
 
-const ignoreSchema = z.object({ txHash: z.string().trim().min(1) });
+const ignoreSchema = z.object({
+  txHash: z.string().trim().min(1),
+  reason: z.string().trim().max(300).optional(),
+});
 
 export async function ignoreUnmatchedAction(
+  _prev: UnmatchedState,
+  formData: FormData,
+): Promise<UnmatchedState> {
+  const parsed = ignoreSchema.safeParse({
+    txHash: formData.get("txHash"),
+    reason: formData.get("reason") || undefined,
+  });
+  if (!parsed.success) return { error: "Invalid request" };
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" };
+
+  try {
+    await ignoreUnmatchedDeposit({
+      txHash: parsed.data.txHash,
+      adminId: user.id,
+      reason: parsed.data.reason,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Failed to ignore" };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "unmatched_deposit_ignore",
+    targetType: "unmatched_deposit",
+    targetId: parsed.data.txHash,
+    detail: parsed.data.reason,
+  });
+
+  revalidatePath("/admin/unmatched");
+  return { ok: true };
+}
+
+export async function unignoreUnmatchedAction(
   _prev: UnmatchedState,
   formData: FormData,
 ): Promise<UnmatchedState> {
@@ -96,14 +139,17 @@ export async function ignoreUnmatchedAction(
   if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" };
 
   try {
-    await ignoreUnmatchedDeposit({ txHash: parsed.data.txHash, adminId: user.id });
+    await unignoreUnmatchedDeposit({
+      txHash: parsed.data.txHash,
+      adminId: user.id,
+    });
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Failed to ignore" };
+    return { error: e instanceof Error ? e.message : "Failed to un-ignore" };
   }
 
   await recordAdminAction({
     adminId: user.id,
-    action: "unmatched_deposit_ignore",
+    action: "unmatched_deposit_unignore",
     targetType: "unmatched_deposit",
     targetId: parsed.data.txHash,
   });

@@ -4,22 +4,26 @@ import { useActionState, useState } from "react";
 import {
   creditUnmatchedAction,
   ignoreUnmatchedAction,
+  unignoreUnmatchedAction,
   type UnmatchedState,
 } from "./actions";
 
 /**
  * Reconcile one unmatched pooled deposit: credit it to the suggested account in
- * one click, credit it to a manually-entered email, or ignore it. Two-step on the
- * destructive/irreversible actions; the server action + SQL re-verify the admin.
+ * one click, credit it to a manually-entered email, ignore it (with a reason), or
+ * — for an already-ignored row — un-ignore it back to the queue. Crediting works
+ * on a PENDING or an IGNORED row, so a mistaken ignore is one click to recover.
  */
 export function UnmatchedReconcile({
   txHash,
   amountUsdt,
   suggested,
+  variant = "pending",
 }: {
   txHash: string;
   amountUsdt: string;
   suggested: { userId: string; email: string | null } | null;
+  variant?: "pending" | "ignored";
 }) {
   const [creditState, creditAction, crediting] = useActionState<
     UnmatchedState,
@@ -29,9 +33,13 @@ export function UnmatchedReconcile({
     UnmatchedState,
     FormData
   >(ignoreUnmatchedAction, {});
+  const [unignoreState, unignoreAction, unignoring] = useActionState<
+    UnmatchedState,
+    FormData
+  >(unignoreUnmatchedAction, {});
   const [mode, setMode] = useState<"idle" | "manual" | "ignore">("idle");
 
-  const error = creditState.error ?? ignoreState.error;
+  const error = creditState.error ?? ignoreState.error ?? unignoreState.error;
 
   return (
     <div className="mt-3 border-t border-paper-border pt-3">
@@ -68,13 +76,26 @@ export function UnmatchedReconcile({
           >
             Credit another user
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("ignore")}
-            className="rounded-md border border-sell/50 px-4 py-2 text-sm font-medium text-sell hover:bg-sell-wash"
-          >
-            Ignore
-          </button>
+          {variant === "pending" ? (
+            <button
+              type="button"
+              onClick={() => setMode("ignore")}
+              className="rounded-md border border-sell/50 px-4 py-2 text-sm font-medium text-sell hover:bg-sell-wash"
+            >
+              Ignore
+            </button>
+          ) : (
+            <form action={unignoreAction}>
+              <input type="hidden" name="txHash" value={txHash} />
+              <button
+                type="submit"
+                disabled={unignoring}
+                className="rounded-md border border-paper-border px-4 py-2 text-sm font-medium text-ink-soft hover:bg-paper-sunken disabled:opacity-60"
+              >
+                {unignoring ? "Restoring…" : "Un-ignore (back to queue)"}
+              </button>
+            </form>
+          )}
         </div>
       )}
 
@@ -115,9 +136,16 @@ export function UnmatchedReconcile({
         <form action={ignoreAction} className="space-y-2">
           <input type="hidden" name="txHash" value={txHash} />
           <p className="text-xs text-ink-muted">
-            Dismiss this transfer (dust, or not a real deposit). It stays on-chain
-            but leaves the reconciliation queue.
+            Dismiss this transfer (dust, or not a real deposit). The funds stay in
+            the hot wallet as unattributed platform funds — don&apos;t ignore a real
+            user&apos;s deposit. You can un-ignore it later from the History tab.
           </p>
+          <input
+            type="text"
+            name="reason"
+            placeholder="Reason (e.g. dust / spam) — for the audit log"
+            className="w-full rounded-md border border-paper-border bg-paper px-3 py-2 text-sm text-ink focus:border-sell focus:outline-none"
+          />
           <div className="flex gap-2">
             <button
               type="submit"

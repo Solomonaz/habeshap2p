@@ -104,17 +104,95 @@ export async function creditUnmatchedDeposit(args: {
   return String(data ?? "0");
 }
 
-/** Admin dismisses a stuck transfer (dust / not a real deposit). */
+/** Admin dismisses a stuck transfer (dust / not a real deposit), with a reason. */
 export async function ignoreUnmatchedDeposit(args: {
   txHash: string;
   adminId: string;
+  reason?: string;
 }): Promise<void> {
   const admin = createAdminSupabase();
   const { error } = await admin.rpc("ignore_unmatched_deposit", {
     p_admin: args.adminId,
     p_tx_hash: args.txHash,
+    p_reason: args.reason ?? null,
   });
   if (error) throw new Error(error.message);
+}
+
+/** Send an ignored row back to the pending queue (recover a mistaken ignore). */
+export async function unignoreUnmatchedDeposit(args: {
+  txHash: string;
+  adminId: string;
+}): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("unignore_unmatched_deposit", {
+    p_admin: args.adminId,
+    p_tx_hash: args.txHash,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export type ResolvedUnmatchedDeposit = {
+  id: string;
+  txHash: string;
+  amountUsdt: string;
+  status: "CREDITED" | "IGNORED";
+  creditedEmail: string | null;
+  resolutionNote: string | null;
+  resolvedAt: string | null;
+};
+
+/** The CREDITED + IGNORED history, newest resolution first. */
+export async function fetchResolvedUnmatchedDeposits(): Promise<
+  ResolvedUnmatchedDeposit[]
+> {
+  const admin = createAdminSupabase();
+  const { data, error } = await admin
+    .from("unmatched_deposits")
+    .select(
+      "id, tx_hash, amount_usdt::text, status, credited_user_id, resolution_note, resolved_at",
+    )
+    .in("status", ["CREDITED", "IGNORED"])
+    .order("resolved_at", { ascending: false })
+    .limit(100);
+  if (error) {
+    throw new Error(`failed to load resolved deposits: ${error.message}`);
+  }
+  const rows = (data ?? []) as {
+    id: string;
+    tx_hash: string;
+    amount_usdt: string;
+    status: "CREDITED" | "IGNORED";
+    credited_user_id: string | null;
+    resolution_note: string | null;
+    resolved_at: string | null;
+  }[];
+
+  const creditedIds = [
+    ...new Set(rows.map((r) => r.credited_user_id).filter(Boolean) as string[]),
+  ];
+  const emailById = new Map<string, string | null>();
+  if (creditedIds.length) {
+    const { data: users } = await admin
+      .from("users")
+      .select("id, email")
+      .in("id", creditedIds);
+    for (const u of (users ?? []) as { id: string; email: string | null }[]) {
+      emailById.set(u.id, u.email);
+    }
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    txHash: r.tx_hash,
+    amountUsdt: r.amount_usdt,
+    status: r.status,
+    creditedEmail: r.credited_user_id
+      ? (emailById.get(r.credited_user_id) ?? null)
+      : null,
+    resolutionNote: r.resolution_note,
+    resolvedAt: r.resolved_at,
+  }));
 }
 
 /** Resolve an email to a user id (for the manual-credit form). */
