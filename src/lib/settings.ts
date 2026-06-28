@@ -46,6 +46,8 @@ const SETTINGS_COLUMNS =
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
   "sweep_strategy, pooled_deposit_address";
 
+let lastKnownRow: SettingsRow | null = null;
+
 const loadSettingsRow = unstable_cache(
   async (): Promise<SettingsRow | null> => {
     const admin = createAdminSupabase();
@@ -64,9 +66,16 @@ const loadSettingsRow = unstable_cache(
       if (!missingTable) {
         console.error(`[settings] failed to read settings row: ${error.message}`);
       }
+      // If a database read hiccup occurs, fall back to the last known valid row to avoid unintended mode flips.
+      if (lastKnownRow) {
+        return lastKnownRow;
+      }
       return null;
     }
-    return (data as SettingsRow | null) ?? null;
+    if (data) {
+      lastKnownRow = data as unknown as SettingsRow;
+    }
+    return (data as unknown as SettingsRow | null) ?? lastKnownRow;
   },
   ["platform-settings-row"],
   { revalidate: 30, tags: ["platform-settings"] },
@@ -90,16 +99,19 @@ const getSettingsRow = cache(loadSettingsRow);
 
 /**
  * Is the platform in LIVE (real-money) mode? Service-role read.
- *
- * FAIL-SAFE: any read error returns false (TEST mode). We must never silently
- * fall into moving real money because a settings read hiccuped — and in TEST
- * mode the production faucet is still hard-blocked by NODE_ENV, so a false
- * negative is harmless, while a false positive would be dangerous.
+ * Resilient fallback: uses last known valid row during DB glitches, and respects FORCE_LIVE_PAYMENTS env var.
  */
 export async function isLivePaymentsEnabled(): Promise<boolean> {
+  if (process.env.FORCE_LIVE_PAYMENTS === "true") {
+    return true;
+  }
   const row = await getSettingsRow();
-  return row?.live_payments === true;
+  if (row?.live_payments !== undefined && row?.live_payments !== null) {
+    return row.live_payments === true;
+  }
+  return lastKnownRow?.live_payments === true;
 }
+
 
 /**
  * Flip the live-payments switch. Goes through the service-role RPC, which

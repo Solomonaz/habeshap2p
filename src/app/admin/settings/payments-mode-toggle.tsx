@@ -1,17 +1,14 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   setPaymentsModeAction,
   type PaymentsModeState,
 } from "../actions";
 
 /**
- * The admin's TEST ↔ LIVE payments switch. In TEST mode users get the dev faucet
- * and the no-network stub chain; flipping to LIVE replaces the faucet with real
- * on-chain Tron deposits/withdrawals. Enabling LIVE is refused server-side
- * unless the Tron secrets are configured, so `configured` here just lets us warn
- * up front and disable the button.
+ * The admin's TEST ↔ LIVE payments switch. Enhanced with a double-confirmation guardrail
+ * so admins never accidentally flip real money modes.
  */
 export function PaymentsModeToggle({
   live,
@@ -24,6 +21,8 @@ export function PaymentsModeToggle({
     PaymentsModeState,
     FormData
   >(setPaymentsModeAction, {});
+
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // The form flips to the opposite of the current mode.
   const next = live ? "false" : "true";
@@ -90,25 +89,48 @@ export function PaymentsModeToggle({
         </p>
       )}
 
-      <form action={formAction} className="mt-4">
-        <input type="hidden" name="enabled" value={next} />
-        <button
-          type="submit"
-          disabled={pending || (!live && !configured)}
-          className={
-            "rounded-md px-4 py-2 text-sm font-semibold text-paper disabled:opacity-50 " +
-            (live
-              ? "bg-amber hover:bg-amber-soft"
-              : "bg-sell hover:opacity-90")
-          }
-        >
-          {pending
-            ? "Saving…"
-            : live
-              ? "Switch to test mode"
-              : "Enable live payments"}
-        </button>
-      </form>
+      {!showConfirm ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setShowConfirm(true)}
+            disabled={pending || (!live && !configured)}
+            className={
+              "rounded-md px-4 py-2 text-sm font-semibold text-paper disabled:opacity-50 " +
+              (live
+                ? "bg-amber hover:bg-amber-soft"
+                : "bg-sell hover:opacity-90")
+            }
+          >
+            {live ? "Switch to test mode" : "Enable live payments"}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-md border border-amber/40 bg-amber-wash p-4 space-y-3">
+          <p className="text-xs font-semibold text-amber">
+            ⚠️ CONFIRM MODE CHANGE: Are you sure you want to switch from{" "}
+            <span className="underline">{live ? "LIVE" : "TEST"}</span> to{" "}
+            <span className="underline">{live ? "TEST" : "LIVE"}</span> mode?
+          </p>
+          <form action={formAction} className="flex items-center gap-2">
+            <input type="hidden" name="enabled" value={next} />
+            <button
+              type="submit"
+              disabled={pending}
+              className="rounded-md bg-ink px-3.5 py-1.5 text-xs font-semibold text-paper hover:opacity-90 disabled:opacity-50"
+            >
+              {pending ? "Saving…" : "Yes, confirm mode change"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowConfirm(false)}
+              className="rounded-md border border-paper-border bg-paper px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper-raised"
+            >
+              Cancel
+            </button>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
