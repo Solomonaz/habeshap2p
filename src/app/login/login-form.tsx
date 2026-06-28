@@ -14,12 +14,15 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/dashboard";
   const justConfirmed = searchParams.get("confirmed") === "1";
+  const justReset = searchParams.get("reset") === "1";
   const errorParam = searchParams.get("error");
   const confirmError = errorParam === "confirm";
   const unconfirmed = errorParam === "unconfirmed";
+  const resetExpired = errorParam === "reset_expired";
   const telegramError = errorParam === "telegram";
   const telegramUnconfigured = errorParam === "telegram_unconfigured";
   const oauthError = errorParam === "oauth";
+
 
   const telegramBotId = publicEnv.NEXT_PUBLIC_TELEGRAM_BOT_ID;
 
@@ -61,6 +64,16 @@ export function LoginForm() {
       {justConfirmed && (
         <p className="mt-5 rounded-md border border-state-released/40 bg-buy-wash px-3 py-2 text-sm text-state-released">
           Email confirmed — you can sign in now.
+        </p>
+      )}
+      {justReset && (
+        <p className="mt-5 rounded-md border border-state-released/40 bg-buy-wash px-3 py-2 text-sm text-state-released">
+          Password updated successfully — you can sign in now.
+        </p>
+      )}
+      {resetExpired && (
+        <p className="mt-5 rounded-md border border-sell/40 bg-sell-wash px-3 py-2 text-sm text-state-disputed">
+          That password reset link is invalid or expired. Please request a new link.
         </p>
       )}
       {confirmError && (
@@ -111,12 +124,20 @@ export function LoginForm() {
           />
         </div>
         <div>
-          <label
-            htmlFor="password"
-            className="block text-xs font-medium uppercase tracking-wide text-ink-soft"
-          >
-            Password
-          </label>
+          <div className="flex items-center justify-between">
+            <label
+              htmlFor="password"
+              className="block text-xs font-medium uppercase tracking-wide text-ink-soft"
+            >
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-amber hover:text-amber-soft transition-colors"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <PasswordInput
             id="password"
             autoComplete="current-password"
