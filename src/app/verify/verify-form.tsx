@@ -30,6 +30,7 @@ export function VerifyForm({
 
   const [fullName, setFullName] = useState(defaultFullName);
   const [idDoc, setIdDoc] = useState<File | null>(null);
+  const [idBack, setIdBack] = useState<File | null>(null);
   const [liveness, setLiveness] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,7 +54,11 @@ export function VerifyForm({
       return;
     }
     if (!idDoc) {
-      setError("Please attach a photo of your ID.");
+      setError("Please attach a photo of the FRONT of your ID.");
+      return;
+    }
+    if (!idBack) {
+      setError("Please attach a photo of the BACK of your ID.");
       return;
     }
     if (!liveness) {
@@ -67,13 +72,15 @@ export function VerifyForm({
 
     setBusy(true);
     try {
-      const [idPath, livePath] = await Promise.all([
+      const [idPath, idBackPath, livePath] = await Promise.all([
         uploadImage(idDoc),
+        uploadImage(idBack),
         uploadImage(liveness),
       ]);
 
       const fd = new FormData();
       fd.set("idDocumentPath", idPath);
+      fd.set("idDocumentBackPath", idBackPath);
       fd.set("livenessPath", livePath);
       fd.set("fullName", fullName.trim());
       const res = await submitVerification({}, fd);
@@ -114,23 +121,36 @@ export function VerifyForm({
       </div>
 
       <div>
-        <label htmlFor="idDoc" className="block text-sm text-ink-soft">
-          Government-issued ID
-        </label>
+        <span className="block text-sm text-ink-soft">Government-issued ID</span>
         <p className="mt-0.5 text-xs text-ink-faint">
-          A clear photo of your passport, national ID, or driver&apos;s licence.
+          Clear photos of the FRONT and BACK of your national ID, passport, or
+          driver&apos;s licence. Make sure all text is readable and not cut off.
         </p>
         {/* No `capture` attribute: on mobile that would force the camera open
-            and prevent choosing the existing ID photo. A plain file picker lets
+            and prevent choosing an existing ID photo. A plain file picker lets
             the user pick from gallery/files OR snap a new one. */}
-        <input
-          id="idDoc"
-          type="file"
-          accept="image/*"
-          required
-          onChange={(e) => setIdDoc(e.target.files?.[0] ?? null)}
-          className={`mt-1 ${fileClass}`}
-        />
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="text-xs font-medium text-ink-muted">Front</span>
+            <input
+              type="file"
+              accept="image/*"
+              required
+              onChange={(e) => setIdDoc(e.target.files?.[0] ?? null)}
+              className={`mt-1 ${fileClass}`}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-medium text-ink-muted">Back</span>
+            <input
+              type="file"
+              accept="image/*"
+              required
+              onChange={(e) => setIdBack(e.target.files?.[0] ?? null)}
+              className={`mt-1 ${fileClass}`}
+            />
+          </label>
+        </div>
       </div>
 
       <div>
@@ -335,7 +355,7 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
   }
 
   const frameClass =
-    "mt-2 w-full max-w-xs overflow-hidden rounded-md border border-paper-border bg-paper-sunken";
+    "mt-2 w-full max-w-sm overflow-hidden rounded-xl border border-paper-border bg-paper-sunken";
   const btn =
     "rounded-md bg-amber px-4 py-2 text-sm font-medium text-paper hover:bg-amber-soft";
   const ghostBtn =
@@ -369,7 +389,7 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
 
       {phase === "live" && (
         <div>
-          <div className={frameClass}>
+          <div className={`relative ${frameClass}`}>
             {/* Mirror the preview so it reads like a mirror to the user. */}
             <video
               ref={videoRef}
@@ -377,6 +397,14 @@ function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void
               muted
               className="w-full -scale-x-100"
             />
+            {/* Personal-KYC-style face guide: a portrait oval that dims the
+                surround, so the user frames their face like a verification app. */}
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="h-[80%] aspect-[3/4] rounded-[50%] border-2 border-amber/90 shadow-[0_0_0_999px_rgba(11,14,17,0.5)]" />
+            </div>
+            <p className="pointer-events-none absolute inset-x-0 top-2 text-center text-[11px] font-medium text-white/95 drop-shadow">
+              Center your face · look straight · good light
+            </p>
           </div>
           <div className="mt-2 flex gap-2">
             <button type="button" onClick={capture} className={btn}>

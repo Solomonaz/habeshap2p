@@ -8,7 +8,7 @@ export type KycSubmissionRow =
 
 const KYC_BUCKET = "kyc";
 const KYC_COLUMNS =
-  "id, user_id, id_document_path, liveness_path, full_name, status, rejection_reason, reviewed_by, reviewed_at, created_at";
+  "id, user_id, id_document_path, id_document_back_path, liveness_path, full_name, status, rejection_reason, reviewed_by, reviewed_at, created_at";
 
 /**
  * Identity verification (Stage 2). A user uploads a government ID + a liveness
@@ -26,6 +26,7 @@ const KYC_COLUMNS =
 export async function submitKyc(args: {
   userId: string;
   idDocumentPath: string;
+  idDocumentBackPath: string;
   livenessPath: string;
   fullName: string;
 }): Promise<string> {
@@ -33,6 +34,7 @@ export async function submitKyc(args: {
   const { data, error } = await supabase.rpc("kyc_submit", {
     p_user: args.userId,
     p_id_document: args.idDocumentPath,
+    p_id_document_back: args.idDocumentBackPath,
     p_liveness: args.livenessPath,
     p_full_name: args.fullName,
   });

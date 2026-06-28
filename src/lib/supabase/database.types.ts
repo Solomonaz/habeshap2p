@@ -482,6 +482,7 @@ export type Database = {
           id: string;
           user_id: string;
           id_document_path: string;
+          id_document_back_path: string | null;
           liveness_path: string;
           full_name: string;
           status: KycStatus;
@@ -792,6 +793,7 @@ export type Database = {
         Args: {
           p_user: string;
           p_id_document: string;
+          p_id_document_back: string;
           p_liveness: string;
           p_full_name: string;
         };

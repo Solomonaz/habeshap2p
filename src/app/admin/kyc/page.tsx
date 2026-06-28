@@ -30,6 +30,9 @@ export default async function AdminKycPage() {
     pending.map(async (s) => ({
       submission: s,
       idUrl: await signedKycUrl(admin, s.id_document_path),
+      idBackUrl: s.id_document_back_path
+        ? await signedKycUrl(admin, s.id_document_back_path)
+        : null,
       livenessUrl: await signedKycUrl(admin, s.liveness_path),
     })),
   );
@@ -50,7 +53,7 @@ export default async function AdminKycPage() {
           </p>
         ) : (
           <ul className="mt-6 space-y-4">
-            {withUrls.map(({ submission: s, idUrl, livenessUrl }) => (
+            {withUrls.map(({ submission: s, idUrl, idBackUrl, livenessUrl }) => (
               <li
                 key={s.id}
                 className="rounded-card border border-paper-border bg-paper-raised p-5"
@@ -65,22 +68,41 @@ export default async function AdminKycPage() {
                   </span>
                 </div>
 
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   <figure>
                     <figcaption className="mb-1 text-xs text-ink-muted">
-                      Government ID
+                      ID — front
                     </figcaption>
                     {idUrl ? (
                       <a href={idUrl} target="_blank" rel="noreferrer">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={idUrl}
-                          alt="Government ID"
+                          alt="ID front"
                           className="w-full rounded-md border border-paper-border"
                         />
                       </a>
                     ) : (
                       <p className="text-xs text-sell">Image unavailable</p>
+                    )}
+                  </figure>
+                  <figure>
+                    <figcaption className="mb-1 text-xs text-ink-muted">
+                      ID — back
+                    </figcaption>
+                    {idBackUrl ? (
+                      <a href={idBackUrl} target="_blank" rel="noreferrer">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={idBackUrl}
+                          alt="ID back"
+                          className="w-full rounded-md border border-paper-border"
+                        />
+                      </a>
+                    ) : (
+                      <p className="text-xs text-ink-faint">
+                        Not provided (older submission)
+                      </p>
                     )}
                   </figure>
                   <figure>

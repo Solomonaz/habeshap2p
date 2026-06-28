@@ -13,6 +13,7 @@ import { notifyAdmins } from "@/lib/notifications";
 // client can't file someone else's uploads against its own account.
 const schema = z.object({
   idDocumentPath: z.string().min(1),
+  idDocumentBackPath: z.string().min(1),
   livenessPath: z.string().min(1),
   fullName: z.string().trim().min(2, "Please enter your full name."),
 });
@@ -25,6 +26,7 @@ export async function submitVerification(
 ): Promise<VerifyState> {
   const parsed = schema.safeParse({
     idDocumentPath: formData.get("idDocumentPath"),
+    idDocumentBackPath: formData.get("idDocumentBackPath"),
     livenessPath: formData.get("livenessPath"),
     fullName: formData.get("fullName"),
   });
@@ -43,6 +45,7 @@ export async function submitVerification(
   const prefix = `${user.id}/`;
   if (
     !parsed.data.idDocumentPath.startsWith(prefix) ||
+    !parsed.data.idDocumentBackPath.startsWith(prefix) ||
     !parsed.data.livenessPath.startsWith(prefix)
   ) {
     return { error: "Uploaded files do not belong to your account." };
@@ -52,6 +55,7 @@ export async function submitVerification(
     await submitKyc({
       userId: user.id,
       idDocumentPath: parsed.data.idDocumentPath,
+      idDocumentBackPath: parsed.data.idDocumentBackPath,
       livenessPath: parsed.data.livenessPath,
       fullName: parsed.data.fullName,
     });
