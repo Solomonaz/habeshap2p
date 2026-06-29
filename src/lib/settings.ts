@@ -98,18 +98,36 @@ const getSettingsRow = cache(loadSettingsRow);
  */
 
 /**
- * Is the platform in LIVE (real-money) mode? Service-role read.
- * Resilient fallback: uses last known valid row during DB glitches, and respects FORCE_LIVE_PAYMENTS env var.
+ * Is the platform in LIVE (real-money) mode? The real-money kill-switch.
+ *
+ * Read FRESH and uncached every time, straight from the DB — never via the cached
+ * settings row, an env override, or a last-known-row fallback. Those can mask the
+ * admin's toggle and keep the platform moving real money after it was switched off
+ * (which is exactly what an env FORCE override did). The DB flag is the single
+ * source of truth. FAIL-SAFE: any read error returns false (TEST mode), so a glitch
+ * can never silently keep real money on.
  */
 export async function isLivePaymentsEnabled(): Promise<boolean> {
-  if (process.env.FORCE_LIVE_PAYMENTS === "true") {
-    return true;
+  const admin = createAdminSupabase();
+  // A single transient read failure — a serverless cold-start connection, a
+  // momentary Supabase blip — must NOT flip the platform to TEST ("live turns to
+  // test by itself"). Retry a few times; only when the DB genuinely can't be read
+  // do we fall back to the safe TEST default (never move real money unconfirmed).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { data, error } = await admin
+      .from("platform_settings")
+      .select("live_payments")
+      .eq("id", true)
+      .maybeSingle();
+    if (!error) return data?.live_payments === true;
+    if (attempt < 2) {
+      await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+    }
   }
-  const row = await getSettingsRow();
-  if (row?.live_payments !== undefined && row?.live_payments !== null) {
-    return row.live_payments === true;
-  }
-  return lastKnownRow?.live_payments === true;
+  console.error(
+    "[settings] live_payments unreadable after retries — defaulting to TEST mode",
+  );
+  return false;
 }
 
 
@@ -265,14 +283,20 @@ export async function getOrderTtlMinutes(): Promise<number> {
  *
  *   staking — delegate Energy from the hot wallet's frozen TRX (no burn).
  *   rental  — rent Energy from an external market for the sweep.
+ *   burn    — send the deposit address TRX to be burned as Energy on the transfer.
  *   pooled  — one shared deposit address, no per-user sweep at all.
  */
-export type SweepStrategy = "staking" | "rental" | "pooled";
+export type SweepStrategy = "staking" | "rental" | "burn" | "pooled";
 
 /** Default strategy when the settings row can't be read — mirrors the SQL default. */
 export const DEFAULT_SWEEP_STRATEGY: SweepStrategy = "staking";
 
-const SWEEP_STRATEGIES: readonly SweepStrategy[] = ["staking", "rental", "pooled"];
+const SWEEP_STRATEGIES: readonly SweepStrategy[] = [
+  "staking",
+  "rental",
+  "burn",
+  "pooled",
+];
 
 /**
  * Read the configured sweep strategy. Service-role read (it drives the sweeper and

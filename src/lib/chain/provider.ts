@@ -70,6 +70,9 @@ export type SweepOutcome =
   | { status: "swept"; txHash: string; amountUsdt: string }
   | { status: "delegated"; txHash: string }
   | { status: "rented"; txHash?: string }
+  // 'burn' strategy: TRX was sent to the deposit address to be burned as Energy on
+  // the next run's transfer.
+  | { status: "gassed"; txHash: string }
   | { status: "skipped"; reason?: string };
 
 export interface ChainProvider {

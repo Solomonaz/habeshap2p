@@ -8,10 +8,11 @@ import {
 import type { SweepStrategy } from "@/lib/settings";
 
 /**
- * The admin's deposit-gas strategy switch (migration 0029). Replaces the old
- * model that sent (and burned) TRX on every sweep. The three strategies:
+ * The admin's deposit-gas strategy switch (migrations 0029 + 0039). The four
+ * strategies:
  *   staking — delegate Energy from the hot wallet's frozen TRX (no burn).
  *   rental  — rent Energy from an external market for each sweep.
+ *   burn    — send the deposit address TRX to be burned as Energy on the transfer.
  *   pooled  — one shared deposit address, no per-user sweep at all.
  */
 const OPTIONS: {
@@ -30,6 +31,12 @@ const OPTIONS: {
     title: "Rental — rent Energy",
     blurb:
       "Rent Energy from an external market for each sweep. No TRX locked; a small recurring fee per deposit. Needs ENERGY_RENTAL_API_URL / _KEY configured.",
+  },
+  {
+    value: "burn",
+    title: "Burn — spend TRX as gas",
+    blurb:
+      "Send each deposit address just enough TRX to be burned as Energy when it sweeps. Pay-as-you-go: no stake locked, no rental provider — the TRX is spent. Simplest, but costs ~a few TRX per deposit. Keep TRX in the hot wallet.",
   },
   {
     value: "pooled",
@@ -58,7 +65,7 @@ export function SweepStrategyForm({
         <div>
           <h2 className="text-sm font-medium text-ink">Deposit gas strategy</h2>
           <p className="mt-1 text-xs text-ink-faint">
-            How received deposits are consolidated without burning TRX.
+            How received deposits are consolidated into the hot wallet.
           </p>
         </div>
         <span className="rounded bg-paper-sunken px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">

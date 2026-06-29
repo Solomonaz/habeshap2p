@@ -456,9 +456,9 @@ export type Database = {
           // Admin-configurable order payment window (migration 0022). Minutes a
           // CREATED order may sit unpaid before it is eligible for auto-cancel.
           order_ttl_minutes: number;
-          // Admin-selectable deposit-gas strategy (migration 0029):
-          // 'staking' | 'rental' | 'pooled'. pooled_deposit_address is the shared
-          // omnibus address override (null ⇒ use the hot-wallet address).
+          // Admin-selectable deposit-gas strategy (migrations 0029 + 0039):
+          // 'staking' | 'rental' | 'burn' | 'pooled'. pooled_deposit_address is the
+          // shared omnibus address override (null ⇒ use the hot-wallet address).
           sweep_strategy: string;
           pooled_deposit_address: string | null;
           updated_by: string | null;

@@ -25,7 +25,7 @@ export type SweepResult = {
   strategy: string;
   scanned: number;
   swept: number;
-  /** Addresses that had Energy provisioned this run (delegated or rented). */
+  /** Addresses that had gas provisioned this run (delegated, rented, or TRX-topped-up). */
   prepared: number;
   skipped: number;
   failed: number;
@@ -99,6 +99,13 @@ export async function sweepDeposits(): Promise<SweepResult> {
           console.info(
             `[sweeper] rented Energy for ${w.deposit_address.slice(0, 6)}… ` +
               `ref=${outcome.txHash ?? "?"} (will sweep next run)`,
+          );
+          break;
+        case "gassed":
+          result.prepared += 1;
+          console.info(
+            `[sweeper] topped up gas (burn) for ${w.deposit_address.slice(0, 6)}… ` +
+              `tx=${outcome.txHash} (will sweep next run)`,
           );
           break;
         case "skipped":

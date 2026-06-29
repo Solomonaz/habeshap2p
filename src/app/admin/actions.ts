@@ -755,7 +755,7 @@ export async function setOrderTtlAction(
 // The deposit-gas strategy (migration 0029). pooledAddress only applies to the
 // 'pooled' strategy; blank means "use the hot-wallet address".
 const sweepStrategySchema = z.object({
-  strategy: z.enum(["staking", "rental", "pooled"]),
+  strategy: z.enum(["staking", "rental", "burn", "pooled"]),
   pooledAddress: z.string().trim().optional(),
 });
 

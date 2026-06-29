@@ -262,19 +262,21 @@ export class TronGridChainProvider implements ChainProvider {
   }
 
   /**
-   * Consolidate one per-user deposit address into the hot wallet WITHOUT burning
-   * TRX. Two-phase by design: the first run provisions Energy for the address
-   * (delegating it from the hot wallet's stake, or renting it), the next run
-   * forwards the USDT once the Energy is live.
+   * Consolidate one per-user deposit address into the hot wallet. Two-phase by
+   * design: the first run provisions gas for the address, the next run forwards the
+   * USDT once that gas is live.
    *
    *   staking — delegate Energy from the hot wallet's frozen TRX, sweep, then
    *             reclaim the delegation. TRX is locked, never spent.
    *   rental  — rent Energy from the external market, then sweep (rental expires).
+   *   burn    — send the address just enough TRX to BURN as Energy on the transfer.
+   *             Pay-as-you-go: no stake, no provider, the TRX is spent as gas.
    *   pooled  — no-op: pooled mode has no per-user deposit addresses to sweep.
    *
-   * If Energy can't be provisioned (nothing staked, rental down, …) the address is
-   * SKIPPED with a reason and the USDT is left for a later run — we never fall back
-   * to sending TRX. Never touches the internal ledger (credited at deposit time).
+   * For staking/rental, if Energy can't be provisioned the address is SKIPPED and
+   * the USDT waits for a later run (those strategies never burn). The 'burn'
+   * strategy is the explicit opt-in to spend TRX as gas. Never touches the internal
+   * ledger (credited at deposit time).
    */
   async sweepDepositAddress(
     userId: string,
@@ -286,9 +288,33 @@ export class TronGridChainProvider implements ChainProvider {
       return { status: "skipped", reason: "pooled mode — no per-user sweep" };
     }
 
-    const { usdt } = await this.readBalances(fromAddress);
+    const { trx, usdt } = await this.readBalances(fromAddress);
     const usdtMicros = toMicros(usdt);
     if (usdtMicros <= 0n) return { status: "skipped", reason: "no USDT" };
+
+    // BURN: provision gas by SENDING TRX (burned as Energy on the transfer), not by
+    // delegating or renting Energy. Two-phase: top up the TRX this run, forward the
+    // USDT next run once the top-up has confirmed.
+    if (strategy === "burn") {
+      const needSun = await this.burnGasTopupSun();
+      if (toMicros(trx) < needSun) {
+        const hot = await this.getSigner();
+        const topup = await hot.trx.sendTransaction(
+          fromAddress,
+          Number(needSun),
+        );
+        const txHash = topup.txid ?? topup.transaction?.txID ?? "";
+        if (!txHash) throw new Error("gas top-up returned no tx hash");
+        return { status: "gassed", txHash };
+      }
+      // Enough TRX to burn — forward the full USDT balance (the transfer burns it).
+      const txHash = await this.transferFromDepositAddress(
+        userId,
+        fromAddress,
+        usdtMicros,
+      );
+      return { status: "swept", txHash, amountUsdt: usdt };
+    }
 
     const neededEnergy = Math.ceil(
       USDT_TRANSFER_ENERGY * ENERGY_SAFETY_MULTIPLIER,
@@ -329,6 +355,30 @@ export class TronGridChainProvider implements ChainProvider {
     await this.reclaimDelegatedEnergy(fromAddress);
 
     return { status: "swept", txHash, amountUsdt: usdt };
+  }
+
+  /**
+   * TRX (in sun) to send a deposit address so it can BURN for one USDT transfer's
+   * Energy plus a little bandwidth (the 'burn' strategy). Sized to the live Energy
+   * price (`getEnergyFee`, sun per Energy) so we don't strand a big fixed amount at
+   * each address; falls back to a safe value if the price can't be read. If the
+   * price later rises, a too-small top-up just means the address waits and the next
+   * run tops it up again — the two-phase loop self-corrects, never burns short.
+   */
+  private async burnGasTopupSun(): Promise<bigint> {
+    const energy = Math.ceil(USDT_TRANSFER_ENERGY * ENERGY_SAFETY_MULTIPLIER);
+    let feeSunPerEnergy = 420; // safe upper-ish fallback if the read fails
+    try {
+      const tronWeb = await this.getSigner();
+      const params = await tronWeb.trx.getChainParameters();
+      const fee = params.find((p) => p.key === "getEnergyFee");
+      if (fee && Number(fee.value) > 0) feeSunPerEnergy = Number(fee.value);
+    } catch {
+      // keep the fallback — better to over-fund than to under-fund and stall.
+    }
+    const energyCostSun = BigInt(Math.ceil(energy * feeSunPerEnergy));
+    // +3 TRX headroom for bandwidth and a small fee-rise cushion.
+    return energyCostSun + 3_000_000n;
   }
 
   /** Energy currently available to an address (delegated + owned − used). */
@@ -591,6 +641,15 @@ type TronWebInstance = {
   };
   trx: {
     getBalance: (address: string) => Promise<number>;
+    // Send TRX (in sun) from the signer to an address — used by the 'burn'
+    // strategy to top up a deposit address with gas that the transfer then burns.
+    sendTransaction: (
+      to: string,
+      amountSun: number,
+    ) => Promise<{ txid?: string; transaction?: { txID?: string } }>;
+    // Network chain parameters (incl. getEnergyFee = sun per Energy), so the burn
+    // top-up is sized to the live Energy price instead of a wasteful fixed amount.
+    getChainParameters: () => Promise<{ key: string; value: number }[]>;
     getAccountResources: (address: string) => Promise<{
       EnergyLimit?: number;
       EnergyUsed?: number;
