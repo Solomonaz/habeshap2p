@@ -16,10 +16,6 @@ const schema = z.object({
   idDocumentBackPath: z.string().min(1),
   livenessPath: z.string().min(1),
   fullName: z.string().trim().min(2, "Please enter your full name."),
-  idNumber: z
-    .string()
-    .trim()
-    .min(3, "Enter the ID/passport number from your document."),
 });
 
 export type VerifyState = { error?: string };
@@ -33,7 +29,6 @@ export async function submitVerification(
     idDocumentBackPath: formData.get("idDocumentBackPath"),
     livenessPath: formData.get("livenessPath"),
     fullName: formData.get("fullName"),
-    idNumber: formData.get("idNumber"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid submission" };
@@ -63,7 +58,6 @@ export async function submitVerification(
       idDocumentBackPath: parsed.data.idDocumentBackPath,
       livenessPath: parsed.data.livenessPath,
       fullName: parsed.data.fullName,
-      idNumber: parsed.data.idNumber,
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Submission failed" };

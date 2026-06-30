@@ -29,7 +29,6 @@ export async function submitKyc(args: {
   idDocumentBackPath: string;
   livenessPath: string;
   fullName: string;
-  idNumber: string;
 }): Promise<string> {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("kyc_submit", {
@@ -38,19 +37,28 @@ export async function submitKyc(args: {
     p_id_document_back: args.idDocumentBackPath,
     p_liveness: args.livenessPath,
     p_full_name: args.fullName,
-    p_id_number: args.idNumber,
   });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("kyc_submit returned no id");
   return data;
 }
 
-/** Admin clears a pending submission; the account becomes APPROVED. */
-export async function approveKyc(id: string, adminId: string): Promise<void> {
+/**
+ * Admin clears a pending submission; the account becomes APPROVED. The admin
+ * records the ID/passport number read off the document — the SQL normalises it,
+ * blocks it if it's already verified on another account, and stores it (which is
+ * what makes the "one account per ID" rule enforceable).
+ */
+export async function approveKyc(
+  id: string,
+  adminId: string,
+  idNumber: string,
+): Promise<void> {
   const supabase = createAdminSupabase();
   const { error } = await supabase.rpc("kyc_approve", {
     p_id: id,
     p_admin: adminId,
+    p_id_number: idNumber,
   });
   if (error) throw new Error(error.message);
 }
@@ -119,27 +127,26 @@ export async function fetchPendingKyc(): Promise<KycSubmissionRow[]> {
 }
 
 /**
- * The set of ID numbers that are ALREADY verified (APPROVED) on some account. The
- * admin queue uses this to flag a pending submission whose ID number is already
- * verified elsewhere — approving it would be blocked by kyc_approve anyway, but
- * the warning lets the reviewer reject the duplicate up front. Service-role read.
+ * Live check for the admin review box: is the ID number the reviewer just typed
+ * already verified (APPROVED) on a DIFFERENT account? Normalisation happens in
+ * the database (same function the approval gate uses), so the warning the admin
+ * sees and the hard block at approval judge identity identically. `excludeUser`
+ * is the submission's own owner, so re-reviewing the same person never flags.
  */
-export async function fetchApprovedIdNumbers(): Promise<Set<string>> {
+export async function isKycIdNumberTaken(
+  idNumber: string,
+  excludeUserId: string,
+): Promise<boolean> {
   const supabase = createAdminSupabase();
-  const { data, error } = await supabase
-    .from("kyc_submissions")
-    .select("id_number")
-    .eq("status", "APPROVED")
-    .not("id_number", "is", null);
+  const { data, error } = await supabase.rpc("kyc_id_number_taken", {
+    p_id_number: idNumber,
+    p_exclude_user: excludeUserId,
+  });
   if (error) {
-    console.error(`[kyc] failed to load approved id numbers: ${error.message}`);
-    return new Set();
+    console.error(`[kyc] id-number check failed: ${error.message}`);
+    return false;
   }
-  return new Set(
-    (data ?? [])
-      .map((r) => (r as { id_number: string | null }).id_number)
-      .filter((n): n is string => !!n),
-  );
+  return data === true;
 }
 
 /**

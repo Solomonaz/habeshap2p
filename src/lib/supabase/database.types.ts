@@ -797,13 +797,19 @@ export type Database = {
           p_id_document_back: string;
           p_liveness: string;
           p_full_name: string;
-          p_id_number: string;
         };
         Returns: string; // new submission id
       };
       kyc_approve: {
-        Args: { p_id: string; p_admin: string };
+        // Admin records the ID number off the document at approval time; the SQL
+        // normalises it, blocks duplicates, and stores it (migration 0041).
+        Args: { p_id: string; p_admin: string; p_id_number: string };
         Returns: undefined;
+      };
+      kyc_id_number_taken: {
+        // Read-only: is this ID number already APPROVED on another account?
+        Args: { p_id_number: string; p_exclude_user: string };
+        Returns: boolean;
       };
       kyc_reject: {
         Args: { p_id: string; p_admin: string; p_reason: string };

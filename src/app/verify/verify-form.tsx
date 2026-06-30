@@ -29,7 +29,6 @@ export function VerifyForm({
   const supabase = createClient();
 
   const [fullName, setFullName] = useState(defaultFullName);
-  const [idNumber, setIdNumber] = useState("");
   const [idDoc, setIdDoc] = useState<File | null>(null);
   const [idBack, setIdBack] = useState<File | null>(null);
   const [liveness, setLiveness] = useState<File | null>(null);
@@ -52,10 +51,6 @@ export function VerifyForm({
 
     if (fullName.trim().length < 2) {
       setError("Please enter your full name.");
-      return;
-    }
-    if (idNumber.trim().length < 3) {
-      setError("Please enter the ID/passport number from your document.");
       return;
     }
     if (!idDoc) {
@@ -88,7 +83,6 @@ export function VerifyForm({
       fd.set("idDocumentBackPath", idBackPath);
       fd.set("livenessPath", livePath);
       fd.set("fullName", fullName.trim());
-      fd.set("idNumber", idNumber.trim());
       const res = await submitVerification({}, fd);
       if (res.error) {
         setError(res.error);
@@ -122,26 +116,6 @@ export function VerifyForm({
           required
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
-          className={`mt-1 ${inputClass}`}
-        />
-      </div>
-
-      <div>
-        <label htmlFor="idNumber" className="block text-sm text-ink-soft">
-          ID / passport number
-        </label>
-        <p className="mt-0.5 text-xs text-ink-faint">
-          The number printed on the document above. Each ID can verify only one
-          account.
-        </p>
-        <input
-          id="idNumber"
-          type="text"
-          required
-          autoComplete="off"
-          value={idNumber}
-          onChange={(e) => setIdNumber(e.target.value)}
-          placeholder="e.g. ETH-1234567"
           className={`mt-1 ${inputClass}`}
         />
       </div>

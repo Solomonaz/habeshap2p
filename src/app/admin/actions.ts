@@ -15,7 +15,7 @@ import {
   reconcileWithdrawalSent,
   reconcileWithdrawalRefund,
 } from "@/lib/withdrawals";
-import { approveKyc, rejectKyc } from "@/lib/kyc";
+import { approveKyc, rejectKyc, isKycIdNumberTaken } from "@/lib/kyc";
 import { recordAdminAction } from "@/lib/audit";
 import {
   setLivePayments,
@@ -897,19 +897,33 @@ const kycSchema = z.object({
 
 export type KycReviewState = { error?: string };
 
+const kycApproveSchema = z.object({
+  submissionId: z.string().uuid(),
+  idNumber: z
+    .string()
+    .trim()
+    .min(2, "Enter the ID/passport number from the document before approving."),
+});
+
 /**
  * Admin clears a pending identity submission; the account becomes APPROVED and
- * the database triggers (migration 0015) stop blocking that user's trades. Same
- * triple authorization as the other admin actions (route guard, here, and SQL).
+ * the database triggers (migration 0015) stop blocking that user's trades. The
+ * admin reads the ID/passport number off the uploaded document and records it
+ * here — the SQL normalises it, blocks it if it's already verified on another
+ * account, and stores it (migration 0041). Same triple authorization as the
+ * other admin actions (route guard, here, and SQL).
  */
 export async function approveKycAction(
   _prev: KycReviewState,
   formData: FormData,
 ): Promise<KycReviewState> {
-  const parsed = kycSchema.safeParse({
+  const parsed = kycApproveSchema.safeParse({
     submissionId: formData.get("submissionId"),
+    idNumber: formData.get("idNumber"),
   });
-  if (!parsed.success) return { error: "Invalid request" };
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
 
   const supabase = await createServerSupabase();
   const {
@@ -921,7 +935,7 @@ export async function approveKycAction(
   }
 
   try {
-    await approveKyc(parsed.data.submissionId, user.id);
+    await approveKyc(parsed.data.submissionId, user.id, parsed.data.idNumber);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Approval failed" };
   }
@@ -943,6 +957,46 @@ export async function approveKycAction(
 
   revalidatePath("/admin/kyc");
   return {};
+}
+
+export type KycIdCheckState = { taken?: boolean; error?: string };
+
+/**
+ * Live lookup for the review box: as the admin types the ID number, tell them
+ * whether it's already verified on a DIFFERENT account so they can reject the
+ * duplicate without having to attempt an approval. Read-only; the authoritative
+ * block still lives in kyc_approve + the unique index.
+ */
+export async function checkKycIdNumberAction(
+  submissionId: string,
+  idNumber: string,
+): Promise<KycIdCheckState> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in" };
+  if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" };
+  if (!z.string().uuid().safeParse(submissionId).success) {
+    return { error: "Invalid request" };
+  }
+  // Too short to be a real number yet — don't flag anything.
+  if (idNumber.trim().length < 2) return {};
+
+  const admin = createAdminSupabase();
+  const { data: sub } = await admin
+    .from("kyc_submissions")
+    .select("user_id")
+    .eq("id", submissionId)
+    .maybeSingle();
+  if (!sub) return { error: "Submission not found" };
+
+  try {
+    const taken = await isKycIdNumberTaken(idNumber, sub.user_id);
+    return { taken };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Check failed" };
+  }
 }
 
 /** Notify a KYC submission's owner (best-effort; looks up the user). */
