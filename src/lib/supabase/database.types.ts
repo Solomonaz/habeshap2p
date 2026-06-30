@@ -485,6 +485,7 @@ export type Database = {
           id_document_back_path: string | null;
           liveness_path: string;
           full_name: string;
+          id_number: string | null;
           status: KycStatus;
           rejection_reason: string | null;
           reviewed_by: string | null;
@@ -796,6 +797,7 @@ export type Database = {
           p_id_document_back: string;
           p_liveness: string;
           p_full_name: string;
+          p_id_number: string;
         };
         Returns: string; // new submission id
       };

@@ -8,7 +8,7 @@ export type KycSubmissionRow =
 
 const KYC_BUCKET = "kyc";
 const KYC_COLUMNS =
-  "id, user_id, id_document_path, id_document_back_path, liveness_path, full_name, status, rejection_reason, reviewed_by, reviewed_at, created_at";
+  "id, user_id, id_document_path, id_document_back_path, liveness_path, full_name, id_number, status, rejection_reason, reviewed_by, reviewed_at, created_at";
 
 /**
  * Identity verification (Stage 2). A user uploads a government ID + a liveness
@@ -29,6 +29,7 @@ export async function submitKyc(args: {
   idDocumentBackPath: string;
   livenessPath: string;
   fullName: string;
+  idNumber: string;
 }): Promise<string> {
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("kyc_submit", {
@@ -37,6 +38,7 @@ export async function submitKyc(args: {
     p_id_document_back: args.idDocumentBackPath,
     p_liveness: args.livenessPath,
     p_full_name: args.fullName,
+    p_id_number: args.idNumber,
   });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("kyc_submit returned no id");
@@ -114,6 +116,30 @@ export async function fetchPendingKyc(): Promise<KycSubmissionRow[]> {
     .order("created_at", { ascending: true });
   if (error) throw new Error(`failed to load verification queue: ${error.message}`);
   return (data ?? []) as KycSubmissionRow[];
+}
+
+/**
+ * The set of ID numbers that are ALREADY verified (APPROVED) on some account. The
+ * admin queue uses this to flag a pending submission whose ID number is already
+ * verified elsewhere — approving it would be blocked by kyc_approve anyway, but
+ * the warning lets the reviewer reject the duplicate up front. Service-role read.
+ */
+export async function fetchApprovedIdNumbers(): Promise<Set<string>> {
+  const supabase = createAdminSupabase();
+  const { data, error } = await supabase
+    .from("kyc_submissions")
+    .select("id_number")
+    .eq("status", "APPROVED")
+    .not("id_number", "is", null);
+  if (error) {
+    console.error(`[kyc] failed to load approved id numbers: ${error.message}`);
+    return new Set();
+  }
+  return new Set(
+    (data ?? [])
+      .map((r) => (r as { id_number: string | null }).id_number)
+      .filter((n): n is string => !!n),
+  );
 }
 
 /**

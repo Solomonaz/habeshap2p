@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
-import { fetchPendingKyc, signedKycUrl } from "@/lib/kyc";
+import {
+  fetchPendingKyc,
+  fetchApprovedIdNumbers,
+  signedKycUrl,
+} from "@/lib/kyc";
 import { traderHandle } from "@/lib/handle";
 import { KycReview } from "./review";
 
@@ -21,7 +25,10 @@ export default async function AdminKycPage() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) redirect("/market");
 
-  const pending = await fetchPendingKyc();
+  const [pending, approvedIdNumbers] = await Promise.all([
+    fetchPendingKyc(),
+    fetchApprovedIdNumbers(),
+  ]);
 
   // Signed URLs are minted with the service-role client (admins may read any
   // KYC object); they expire quickly so they aren't durable links.
@@ -67,6 +74,21 @@ export default async function AdminKycPage() {
                     {new Date(s.created_at).toLocaleString()}
                   </span>
                 </div>
+                <p className="mt-1 text-xs text-ink-soft">
+                  ID number:{" "}
+                  <span className="font-amount text-ink">
+                    {s.id_number ?? "—"}
+                  </span>
+                </p>
+                {s.id_number && approvedIdNumbers.has(s.id_number) && (
+                  <p className="mt-2 flex items-center gap-2 rounded-md border border-state-disputed/40 bg-sell-wash px-3 py-2 text-xs font-medium text-state-disputed">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="shrink-0">
+                      <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                    </svg>
+                    This ID number is already verified on another account.
+                    Approving is blocked — reject this as a duplicate.
+                  </p>
+                )}
 
                 <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   <figure>
