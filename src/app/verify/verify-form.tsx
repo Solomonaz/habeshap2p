@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { submitVerification } from "./actions";
+import { LivenessCapture } from "./liveness-capture";
 
 const KYC_BUCKET = "kyc";
 // const MAX_BYTES = 8 * 1024 * 1024; // 8 MB per image
@@ -15,8 +16,9 @@ const KYC_BUCKET = "kyc";
  * submission. Keeping the upload client-side means the large binaries never pass
  * through a server action body.
  *
- * The liveness selfie is captured live via the camera (getUserMedia) rather than
- * a file picker, so the user can't upload a saved photo — they must take one now.
+ * The liveness selfie is captured live via the camera (getUserMedia) with an
+ * on-device face guide (see LivenessCapture), so the user can't upload a saved
+ * photo — they must take one now.
  */
 export function VerifyForm({
   userId,
@@ -156,8 +158,8 @@ export function VerifyForm({
       <div>
         <span className="block text-sm text-ink-soft">Liveness selfie</span>
         <p className="mt-0.5 text-xs text-ink-faint">
-          Open your camera and take a selfie now. Look straight at the camera in
-          good light.
+          Open your camera and follow the on-screen guide: center your face, then
+          turn your head left and right. It captures automatically.
         </p>
         <LivenessCapture onCapture={setLiveness} />
       </div>
@@ -172,273 +174,5 @@ export function VerifyForm({
         {busy ? "Submitting…" : "Submit for review"}
       </button>
     </form>
-  );
-}
-
-/** Turns a getUserMedia rejection into something the user can act on. */
-function cameraErrorMessage(err: unknown): string {
-  if (err instanceof DOMException) {
-    switch (err.name) {
-      case "NotAllowedError":
-      case "SecurityError":
-        return (
-          "Camera access was blocked. Allow camera access for this site in " +
-          "your browser settings, or use the button below to take the selfie " +
-          "with your camera app."
-        );
-      case "NotFoundError":
-      case "OverconstrainedError":
-        return (
-          "No camera was found here. If you're on a computer, open this page " +
-          "on your phone, or use the button below to take the selfie."
-        );
-      case "NotReadableError":
-        return (
-          "The camera is in use by another app. Close it (Zoom, Teams, " +
-          "another browser tab) and try again."
-        );
-    }
-  }
-  return (
-    "Couldn't open the camera. Allow camera access and try again, or use the " +
-    "button below to take the selfie with your camera app."
-  );
-}
-
-type CapturePhase = "idle" | "live" | "captured";
-
-/**
- * Live selfie capture. Opens the front camera via getUserMedia, shows a preview,
- * and turns a captured frame into a JPEG File handed back through onCapture.
- * Requires a secure context (https or localhost) — browsers block camera access
- * otherwise, which we surface as an error.
- */
-function LivenessCapture({ onCapture }: { onCapture: (file: File | null) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [phase, setPhase] = useState<CapturePhase>("idle");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [camError, setCamError] = useState<string | null>(null);
-  // When the live camera (getUserMedia) can't be used — blocked permission,
-  // insecure context, no in-browser camera — we reveal a native capture input
-  // that opens the device's camera app directly. On a phone this still forces a
-  // fresh photo (capture="user"); it's the reliable path when getUserMedia fails.
-  const [showFallback, setShowFallback] = useState(false);
-
-  // Centralises "the live camera failed": show the reason and the fallback.
-  function failLiveCamera(message: string) {
-    setCamError(message);
-    setShowFallback(true);
-  }
-
-  function stopStream() {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-  }
-
-  // Stop the camera and revoke the preview object URL on unmount.
-  useEffect(() => {
-    return () => {
-      stopStream();
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-    };
-  }, [previewUrl]);
-
-  async function openCamera() {
-    setCamError(null);
-    if (!window.isSecureContext) {
-      failLiveCamera(
-        "The live camera needs a secure connection (https). Use the button " +
-          "below to take the selfie with your camera app instead.",
-      );
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      failLiveCamera(
-        "The live camera isn't supported in this browser. Use the button " +
-          "below to take the selfie with your camera app instead.",
-      );
-      return;
-    }
-    try {
-      // Prefer the front camera, but fall back to any camera: many desktop
-      // webcams report no facing mode and reject the "user" constraint.
-      let stream: MediaStream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: false,
-        });
-      } catch (constraintErr) {
-        if (
-          constraintErr instanceof DOMException &&
-          (constraintErr.name === "OverconstrainedError" ||
-            constraintErr.name === "NotFoundError")
-        ) {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: false,
-          });
-        } else {
-          throw constraintErr;
-        }
-      }
-      streamRef.current = stream;
-      setPhase("live");
-      // The <video> mounts with this phase; attach the stream after paint.
-      requestAnimationFrame(() => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play();
-        }
-      });
-    } catch (err) {
-      failLiveCamera(cameraErrorMessage(err));
-    }
-  }
-
-  /**
-   * Fallback path: a captured photo from the native camera-app file input.
-   * Reuses the same preview/captured flow as the live camera so submission is
-   * identical downstream.
-   */
-  function onFallbackFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setCamError("Please choose an image file.");
-      return;
-    }
-    setCamError(null);
-    stopStream();
-    onCapture(file);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(URL.createObjectURL(file));
-    setPhase("captured");
-  }
-
-  function capture() {
-    const video = videoRef.current;
-    if (!video) return;
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          setCamError("Couldn't capture the photo. Try again.");
-          return;
-        }
-        stopStream();
-        const file = new File([blob], "liveness.jpg", { type: "image/jpeg" });
-        onCapture(file);
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(URL.createObjectURL(blob));
-        setPhase("captured");
-      },
-      "image/jpeg",
-      0.9,
-    );
-  }
-
-  function retake() {
-    onCapture(null);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    // Back to the chooser so the user can re-open the live camera OR use the
-    // fallback — re-opening the live camera directly would just re-fail for
-    // anyone who landed on the fallback in the first place.
-    setPhase("idle");
-  }
-
-  const frameClass =
-    "mt-2 w-full max-w-sm overflow-hidden rounded-xl border border-paper-border bg-paper-sunken";
-  const btn =
-    "rounded-md bg-amber px-4 py-2 text-sm font-medium text-paper hover:bg-amber-soft";
-  const ghostBtn =
-    "rounded-md border border-paper-border px-4 py-2 text-sm text-ink-soft hover:bg-paper-sunken";
-
-  return (
-    <div className="mt-1">
-      {camError && (
-        <p className="mb-2 text-sm text-state-disputed">{camError}</p>
-      )}
-
-      {phase === "idle" && (
-        <div className="flex flex-col items-start gap-3">
-          <button type="button" onClick={openCamera} className={btn}>
-            Open camera
-          </button>
-          {showFallback && (
-            <label className={`${ghostBtn} cursor-pointer`}>
-              Take selfie with camera app
-              <input
-                type="file"
-                accept="image/*"
-                capture="user"
-                className="sr-only"
-                onChange={onFallbackFile}
-              />
-            </label>
-          )}
-        </div>
-      )}
-
-      {phase === "live" && (
-        <div>
-          <div className={`relative ${frameClass}`}>
-            {/* Mirror the preview so it reads like a mirror to the user. */}
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="w-full -scale-x-100"
-            />
-            {/* Personal-KYC-style face guide: a portrait oval that dims the
-                surround, so the user frames their face like a verification app. */}
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="h-[80%] aspect-[3/4] rounded-[50%] border-2 border-amber/90 shadow-[0_0_0_999px_rgba(11,14,17,0.5)]" />
-            </div>
-            <p className="pointer-events-none absolute inset-x-0 top-2 text-center text-[11px] font-medium text-white/95 drop-shadow">
-              Center your face · look straight · good light
-            </p>
-          </div>
-          <div className="mt-2 flex gap-2">
-            <button type="button" onClick={capture} className={btn}>
-              Take photo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                stopStream();
-                setPhase("idle");
-              }}
-              className={ghostBtn}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {phase === "captured" && previewUrl && (
-        <div>
-          <div className={frameClass}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewUrl} alt="Liveness selfie" className="w-full" />
-          </div>
-          <button
-            type="button"
-            onClick={retake}
-            className={`mt-2 ${ghostBtn}`}
-          >
-            Retake
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
