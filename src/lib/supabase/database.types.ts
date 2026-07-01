@@ -74,6 +74,8 @@ export type Database = {
           account_status: AccountStatus;
           frozen_at: string | null;
           ban_reason: string | null;
+          // Presence heartbeat (migration 0042); null = never seen online.
+          last_seen_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -113,6 +115,7 @@ export type Database = {
           account_status?: AccountStatus;
           frozen_at?: string | null;
           ban_reason?: string | null;
+          last_seen_at?: string | null;
         };
         Relationships: [];
       };
@@ -456,6 +459,9 @@ export type Database = {
           // Admin-configurable order payment window (migration 0022). Minutes a
           // CREATED order may sit unpaid before it is eligible for auto-cancel.
           order_ttl_minutes: number;
+          // Fresh seller release window in minutes (migration 0042) — applied to
+          // expires_at when a buyer marks paid, replacing the leftover payment window.
+          release_window_minutes: number;
           // Admin-selectable deposit-gas strategy (migrations 0029 + 0039):
           // 'staking' | 'rental' | 'burn' | 'pooled'. pooled_deposit_address is the
           // shared omnibus address override (null ⇒ use the hot-wallet address).
@@ -591,6 +597,7 @@ export type Database = {
           created_at: string;
           full_name: string | null;
           is_verified: boolean;
+          last_seen_at: string | null;
         };
         Relationships: [];
       };
@@ -666,7 +673,17 @@ export type Database = {
         Returns: string; // new order id
       };
       order_mark_paid: {
+        // Requires a buyer chat message + resets expires_at to a fresh release
+        // window when flipping to PAID (migration 0042).
         Args: { p_order: string; p_actor: string };
+        Returns: undefined;
+      };
+      set_release_window: {
+        Args: { p_admin: string; p_minutes: number };
+        Returns: undefined;
+      };
+      touch_presence: {
+        Args: { p_user: string };
         Returns: undefined;
       };
       order_release: {

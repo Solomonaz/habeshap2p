@@ -6,6 +6,7 @@ import {
   getPlatformFee,
   getTradePolicy,
   getOrderTtlMinutes,
+  getReleaseWindowMinutes,
   getSweepStrategy,
   getPooledDepositAddress,
 } from "@/lib/settings";
@@ -15,6 +16,7 @@ import { PaymentsModeToggle } from "./payments-mode-toggle";
 import { FeeSettingForm } from "./fee-setting-form";
 import { TradePolicyForm } from "./trade-policy-form";
 import { OrderWindowForm } from "./order-window-form";
+import { ReleaseWindowForm } from "./release-window-form";
 import { SweepStrategyForm } from "./sweep-strategy-form";
 import { EnergyStakeForm } from "./energy-stake-form";
 
@@ -34,6 +36,7 @@ export default async function AdminSettingsPage() {
     fee,
     tradePolicy,
     orderTtl,
+    releaseWindow,
     sweepStrategy,
     pooledAddress,
     hotEnergy,
@@ -43,6 +46,7 @@ export default async function AdminSettingsPage() {
     getPlatformFee(),
     getTradePolicy(),
     getOrderTtlMinutes(),
+    getReleaseWindowMinutes(),
     getSweepStrategy(),
     getPooledDepositAddress(),
     fetchHotWalletEnergy(),
@@ -76,6 +80,7 @@ export default async function AdminSettingsPage() {
         <FeeSettingForm percent={feePercent} min={fee.min} max={fee.max} />
         <TradePolicyForm policy={tradePolicy} />
         <OrderWindowForm minutes={orderTtl} />
+        <ReleaseWindowForm minutes={releaseWindow} />
     </main>
   );
 }

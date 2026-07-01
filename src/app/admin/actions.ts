@@ -22,6 +22,7 @@ import {
   setPlatformFee,
   setTradePolicy,
   setOrderTtlMinutes,
+  setReleaseWindowMinutes,
   setSweepStrategy,
   isLivePaymentsEnabled,
   type SweepStrategy,
@@ -749,6 +750,62 @@ export async function setOrderTtlAction(
 
   revalidatePath("/admin/settings");
   revalidatePath("/market");
+  return { ok: true };
+}
+
+const releaseWindowSchema = z.object({
+  minutes: z
+    .string()
+    .trim()
+    .refine((s) => /^\d+$/.test(s) && Number(s) >= 1, "Window must be ≥ 1 minute")
+    .refine((s) => Number(s) <= 1440, "Window can't exceed 1440 minutes (24h)"),
+});
+
+export type ReleaseWindowState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the seller release window (migration 0042) — the minutes a seller has
+ * to confirm + release AFTER the buyer marks paid. order_mark_paid reads this live
+ * and stamps a fresh deadline, so the new value applies to every order marked paid
+ * after the change. Same triple authorization as every other admin action.
+ */
+export async function setReleaseWindowAction(
+  _prev: ReleaseWindowState,
+  formData: FormData,
+): Promise<ReleaseWindowState> {
+  const parsed = releaseWindowSchema.safeParse({
+    minutes: formData.get("minutes") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+  const minutes = Number(parsed.data.minutes);
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setReleaseWindowMinutes(user.id, minutes);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the release window",
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "release_window_set",
+    targetType: "platform_settings",
+    detail: `seller release window ${minutes} min`,
+  });
+
+  revalidatePath("/admin/settings");
   return { ok: true };
 }
 

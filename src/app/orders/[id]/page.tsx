@@ -12,6 +12,7 @@ import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { traderName } from "@/lib/handle";
+import { PresenceBadge } from "@/components/presence-badge";
 import { OrderControls } from "./order-controls";
 import { OrderChat } from "./order-chat";
 
@@ -41,6 +42,11 @@ export default async function OrderPage({
     counterpartyProfile?.full_name,
     counterpartyId,
   );
+  const counterpartyLastSeen = counterpartyProfile?.last_seen_at ?? null;
+
+  // Chat-first gate: the buyer may only mark paid after they've messaged the
+  // seller (the SQL enforces it too — this just drives the button state).
+  const buyerHasMessaged = messages.some((m) => m.sender_id === order.buyer_id);
 
   const disputeRow =
     order.state === "DISPUTED"
@@ -64,7 +70,16 @@ export default async function OrderPage({
               <span className="font-amount">{formatUsdt(order.amount_usdt)}</span>{" "}
               USDT
             </h1>
-            <p className="mt-0.5 text-sm text-ink-muted">{role}</p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+              <span>
+                {role} · with{" "}
+                <span className="text-ink-soft">{counterpartyName}</span>
+              </span>
+              <PresenceBadge
+                userId={counterpartyId}
+                initialLastSeen={counterpartyLastSeen}
+              />
+            </div>
           </div>
           <span className="rounded bg-paper-sunken px-2 py-1 text-xs font-semibold uppercase tracking-wide text-ink-soft">
             {order.state}
@@ -137,9 +152,14 @@ export default async function OrderPage({
             state={order.state}
             isBuyer={isBuyer}
             isSeller={isSeller}
+            currentUserId={user.id}
+            counterpartyId={counterpartyId}
+            counterpartyName={counterpartyName}
             expiresAt={order.expires_at}
             amountEtb={formatEtb(order.amount_etb)}
             buyerPaymentName={order.buyer_payment_name}
+            buyerHasMessaged={buyerHasMessaged}
+            sellerLastSeen={isBuyer ? counterpartyLastSeen : null}
             dispute={dispute}
           />
         </section>

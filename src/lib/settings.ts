@@ -36,6 +36,7 @@ type SettingsRow = {
   tier_active_trades: number | null;
   tier_established_trades: number | null;
   order_ttl_minutes: number | null;
+  release_window_minutes: number | null;
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
 };
@@ -44,7 +45,7 @@ const SETTINGS_COLUMNS =
   "live_payments, fee_bps, fee_min_usdt, fee_max_usdt, min_merchant_bond, " +
   "trade_limit_new, trade_limit_active, trade_limit_established, " +
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
-  "sweep_strategy, pooled_deposit_address";
+  "release_window_minutes, sweep_strategy, pooled_deposit_address";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -274,6 +275,42 @@ export async function getOrderTtlMinutes(): Promise<number> {
     return DEFAULT_ORDER_TTL_MINUTES;
   }
   return row.order_ttl_minutes;
+}
+
+/** The default seller release window (minutes) — mirrors the SQL default. */
+export const DEFAULT_RELEASE_WINDOW_MINUTES = 30;
+
+/**
+ * Read the configured seller release window in minutes (migration 0042) — how
+ * long the seller has to confirm + release AFTER the buyer marks paid. order_mark_paid
+ * reads this live and stamps a fresh deadline, so it drives the PAID-order countdown
+ * and the auto-freeze. FAIL-SAFE: any read error returns the 30-minute default that
+ * order_mark_paid itself falls back to.
+ */
+export async function getReleaseWindowMinutes(): Promise<number> {
+  const row = await getSettingsRow();
+  if (!row || row.release_window_minutes == null) {
+    return DEFAULT_RELEASE_WINDOW_MINUTES;
+  }
+  return row.release_window_minutes;
+}
+
+/**
+ * Set the seller release window. Goes through the service-role RPC, which
+ * re-checks is_admin and validates the input (at least 1 minute). The caller must
+ * already have verified the actor is an admin (see the admin action).
+ */
+export async function setReleaseWindowMinutes(
+  adminId: string,
+  minutes: number,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_release_window", {
+    p_admin: adminId,
+    p_minutes: minutes,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }
 
 /**

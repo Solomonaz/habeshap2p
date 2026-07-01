@@ -1,8 +1,11 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OrderState } from "@/types/domain";
+import { createClient } from "@/lib/supabase/client";
+import { getPresence } from "@/app/presence-actions";
+import { isOnline } from "@/lib/presence";
 import {
   runOrderAction,
   expireOrderAction,
@@ -29,18 +32,28 @@ export function OrderControls({
   state,
   isBuyer,
   isSeller,
+  currentUserId,
+  counterpartyId,
+  counterpartyName,
   expiresAt,
   amountEtb,
   buyerPaymentName,
+  buyerHasMessaged,
+  sellerLastSeen,
   dispute,
 }: {
   orderId: string;
   state: OrderState;
   isBuyer: boolean;
   isSeller: boolean;
+  currentUserId: string;
+  counterpartyId: string;
+  counterpartyName: string;
   expiresAt: string;
   amountEtb: string;
   buyerPaymentName: string;
+  buyerHasMessaged: boolean;
+  sellerLastSeen: string | null;
   dispute: { reason: string; openedByMe: boolean } | null;
 }) {
   const router = useRouter();
@@ -52,6 +65,57 @@ export function OrderControls({
   const [showDispute, setShowDispute] = useState(false);
   const [expiring, setExpiring] = useState(false);
   const [freezing, setFreezing] = useState(false);
+
+  // Chat-first gate (buyer side). Seeds from the SSR snapshot, then flips live
+  // the instant the buyer sends a message — a Realtime subscription on this
+  // order's messages catches the buyer's own INSERT (the SQL enforces the rule
+  // too, so this only governs the button's enabled state).
+  const [hasMessaged, setHasMessaged] = useState(buyerHasMessaged);
+  const needsChatGate = isBuyer && state === "CREATED" && !hasMessaged;
+  const supabase = useMemo(() => createClient(), []);
+  useEffect(() => {
+    if (!needsChatGate) return;
+    const channel = supabase
+      .channel(`paygate-${orderId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `order_id=eq.${orderId}`,
+        },
+        (payload) => {
+          if ((payload.new as { sender_id: string }).sender_id === currentUserId) {
+            setHasMessaged(true);
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [needsChatGate, supabase, orderId, currentUserId]);
+
+  // Live seller presence for the buyer's pre-payment warning. Seeds from SSR,
+  // then polls so the warning clears the moment the seller comes online.
+  const [sellerSeen, setSellerSeen] = useState<string | null>(sellerLastSeen);
+  const watchSeller = isBuyer && (state === "CREATED" || state === "PAID");
+  useEffect(() => {
+    if (!watchSeller) return;
+    let active = true;
+    const poll = async () => {
+      const res = await getPresence(counterpartyId);
+      if (active) setSellerSeen(res.lastSeen);
+    };
+    void poll();
+    const id = setInterval(poll, 25_000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [watchSeller, counterpartyId]);
+  const sellerOffline = isBuyer && !isOnline(sellerSeen);
 
   // The window keeps counting through CREATED *and* PAID, but only an UNPAID
   // (CREATED) order auto-cancels when it elapses — a PAID order freezes for
@@ -154,17 +218,38 @@ export function OrderControls({
           releases escrow. Once expired the order is auto-cancelling, so the
           button is withdrawn (the DB would reject it anyway). */}
       {isBuyer && state === "CREATED" && !expired && (
-        <form action={formAction}>
-          <input type="hidden" name="orderId" value={orderId} />
-          <input type="hidden" name="intent" value="paid" />
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded-md bg-amber px-4 py-2.5 text-sm font-semibold text-paper hover:bg-amber-soft disabled:opacity-60"
-          >
-            I&apos;ve paid {amountEtb} ETB
-          </button>
-        </form>
+        <div className="space-y-3">
+          {sellerOffline && (
+            <div className="rounded-md border border-amber/40 bg-amber-wash px-3 py-2.5 text-sm">
+              <p className="font-medium text-amber">
+                The seller appears offline.
+              </p>
+              <p className="mt-0.5 text-ink-muted">
+                Consider waiting until they&apos;re online before sending money.
+                If they don&apos;t confirm in time after you pay, their escrow is
+                frozen and an admin steps in — but it&apos;s smoother to trade
+                with an online seller.
+              </p>
+            </div>
+          )}
+          <form action={formAction}>
+            <input type="hidden" name="orderId" value={orderId} />
+            <input type="hidden" name="intent" value="paid" />
+            <button
+              type="submit"
+              disabled={pending || !hasMessaged}
+              className="w-full rounded-md bg-amber px-4 py-2.5 text-sm font-semibold text-paper hover:bg-amber-soft disabled:opacity-50"
+            >
+              I&apos;ve paid {amountEtb} ETB
+            </button>
+          </form>
+          {!hasMessaged && (
+            <p className="text-center text-xs text-ink-faint">
+              💬 Message {counterpartyName} in the chat below before you mark this
+              paid — agree the details first.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Seller: the critical, explicit release. Gated by a confirmation. The

@@ -3,6 +3,7 @@ import { signOut } from "@/app/actions";
 import { Logo } from "@/components/logo";
 import { MobileMenu } from "@/components/mobile-menu";
 import { OrderNotifications } from "@/components/order-notifications";
+import { PresenceHeartbeat } from "@/components/presence-heartbeat";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { initialsFromName, type AccountIdentity } from "@/lib/identity";
 import { navIcon } from "@/components/nav-icons";
@@ -62,6 +63,7 @@ export async function SiteHeader({
   return (
     <header className="sticky top-0 z-40 border-b border-paper-border/70 bg-paper/80 backdrop-blur-xl">
       {userId && <OrderNotifications userId={userId} />}
+      {userId && <PresenceHeartbeat />}
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-6">
         {/* Brand + primary nav */}
         <div className="flex items-center gap-7">
