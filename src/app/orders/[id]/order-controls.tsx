@@ -32,13 +32,12 @@ export function OrderControls({
   state,
   isBuyer,
   isSeller,
-  currentUserId,
   counterpartyId,
   counterpartyName,
   expiresAt,
   amountEtb,
   buyerPaymentName,
-  buyerHasMessaged,
+  sellerHasResponded,
   sellerLastSeen,
   dispute,
 }: {
@@ -46,13 +45,12 @@ export function OrderControls({
   state: OrderState;
   isBuyer: boolean;
   isSeller: boolean;
-  currentUserId: string;
   counterpartyId: string;
   counterpartyName: string;
   expiresAt: string;
   amountEtb: string;
   buyerPaymentName: string;
-  buyerHasMessaged: boolean;
+  sellerHasResponded: boolean;
   sellerLastSeen: string | null;
   dispute: { reason: string; openedByMe: boolean } | null;
 }) {
@@ -66,12 +64,12 @@ export function OrderControls({
   const [expiring, setExpiring] = useState(false);
   const [freezing, setFreezing] = useState(false);
 
-  // Chat-first gate (buyer side). Seeds from the SSR snapshot, then flips live
-  // the instant the buyer sends a message — a Realtime subscription on this
-  // order's messages catches the buyer's own INSERT (the SQL enforces the rule
-  // too, so this only governs the button's enabled state).
-  const [hasMessaged, setHasMessaged] = useState(buyerHasMessaged);
-  const needsChatGate = isBuyer && state === "CREATED" && !hasMessaged;
+  // Chat-first gate (buyer side). The buyer can only mark paid once the SELLER
+  // has replied in chat — so nobody pays an unresponsive seller. Seeds from the
+  // SSR snapshot, then flips live the instant a message from the seller arrives
+  // (the SQL enforces the same rule, so this only governs the button's state).
+  const [sellerReplied, setSellerReplied] = useState(sellerHasResponded);
+  const needsChatGate = isBuyer && state === "CREATED" && !sellerReplied;
   const supabase = useMemo(() => createClient(), []);
   useEffect(() => {
     if (!needsChatGate) return;
@@ -86,8 +84,10 @@ export function OrderControls({
           filter: `order_id=eq.${orderId}`,
         },
         (payload) => {
-          if ((payload.new as { sender_id: string }).sender_id === currentUserId) {
-            setHasMessaged(true);
+          if (
+            (payload.new as { sender_id: string }).sender_id === counterpartyId
+          ) {
+            setSellerReplied(true);
           }
         },
       )
@@ -95,7 +95,7 @@ export function OrderControls({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [needsChatGate, supabase, orderId, currentUserId]);
+  }, [needsChatGate, supabase, orderId, counterpartyId]);
 
   // Live seller presence for the buyer's pre-payment warning. Seeds from SSR,
   // then polls so the warning clears the moment the seller comes online.
@@ -127,6 +127,11 @@ export function OrderControls({
   const mins = Math.floor(remaining / 60000);
   const secs = Math.floor((remaining % 60000) / 1000);
   const expired = remaining <= 0;
+
+  // Whose clock is it? The buyer during the payment window (CREATED), the seller
+  // during the release window (PAID). Only the actor sees the ticking countdown.
+  const isOnTheClock =
+    (state === "CREATED" && isBuyer) || (state === "PAID" && isSeller);
 
   // Bug #1: the instant the countdown hits zero on an unpaid order, cancel it
   // server-side and refresh — don't sit on "auto-cancelling…" waiting for the
@@ -186,24 +191,38 @@ export function OrderControls({
 
   return (
     <div className="space-y-4">
-      {(state === "CREATED" || state === "PAID") && (
-        <div className="flex items-center justify-between rounded-md bg-paper-sunken px-4 py-3 text-sm">
-          <span className="text-ink-muted">
-            {expired
-              ? "Payment window elapsed"
-              : state === "PAID"
-                ? "Awaiting seller release"
-                : "Time to pay"}
-          </span>
-          <span className="font-amount text-ink">
-            {expired
-              ? state === "CREATED"
-                ? "auto-cancelling…"
-                : "freezing escrow…"
-              : `${mins}:${secs.toString().padStart(2, "0")}`}
-          </span>
-        </div>
-      )}
+      {/* The countdown belongs to whoever is on the clock: the BUYER during the
+          payment window (CREATED), the SELLER during the release window (PAID).
+          The other party just waits — they see a passive status, not a ticking
+          timer, so only one side is ever "on the clock" at a time. */}
+      {(state === "CREATED" || state === "PAID") &&
+        (expired ? (
+          <div className="flex items-center justify-between rounded-md bg-paper-sunken px-4 py-3 text-sm">
+            <span className="text-ink-muted">
+              {state === "CREATED"
+                ? "Payment window elapsed"
+                : "Release window elapsed"}
+            </span>
+            <span className="font-amount text-ink">
+              {state === "CREATED" ? "auto-cancelling…" : "freezing escrow…"}
+            </span>
+          </div>
+        ) : isOnTheClock ? (
+          <div className="flex items-center justify-between rounded-md border border-amber/30 bg-amber-wash px-4 py-3 text-sm">
+            <span className="font-medium text-ink">
+              {state === "CREATED" ? "Your time to pay" : "Your time to release"}
+            </span>
+            <span className="font-amount text-ink">
+              {mins}:{secs.toString().padStart(2, "0")}
+            </span>
+          </div>
+        ) : (
+          <div className="rounded-md bg-paper-sunken px-4 py-3 text-sm text-ink-muted">
+            {state === "CREATED"
+              ? `Waiting for the buyer to send payment · they have ${mins}m`
+              : `Waiting for the seller to confirm and release · they have ${mins}m`}
+          </div>
+        ))}
 
       {actionState.error && (
         <p
@@ -237,16 +256,16 @@ export function OrderControls({
             <input type="hidden" name="intent" value="paid" />
             <button
               type="submit"
-              disabled={pending || !hasMessaged}
+              disabled={pending || !sellerReplied}
               className="w-full rounded-md bg-amber px-4 py-2.5 text-sm font-semibold text-paper hover:bg-amber-soft disabled:opacity-50"
             >
               I&apos;ve paid {amountEtb} ETB
             </button>
           </form>
-          {!hasMessaged && (
+          {!sellerReplied && (
             <p className="text-center text-xs text-ink-faint">
-              💬 Message {counterpartyName} in the chat below before you mark this
-              paid — agree the details first.
+              💬 Message {counterpartyName} and wait for their reply before you
+              mark this paid — don&apos;t send money until the seller responds.
             </p>
           )}
         </div>

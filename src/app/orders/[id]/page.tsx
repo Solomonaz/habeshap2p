@@ -44,9 +44,12 @@ export default async function OrderPage({
   );
   const counterpartyLastSeen = counterpartyProfile?.last_seen_at ?? null;
 
-  // Chat-first gate: the buyer may only mark paid after they've messaged the
-  // seller (the SQL enforces it too — this just drives the button state).
-  const buyerHasMessaged = messages.some((m) => m.sender_id === order.buyer_id);
+  // Chat-first gate: the buyer may only mark paid after the SELLER has replied in
+  // chat (the SQL enforces it too — this just drives the button state), so nobody
+  // pays an unresponsive seller.
+  const sellerHasResponded = messages.some(
+    (m) => m.sender_id === order.seller_id,
+  );
 
   const disputeRow =
     order.state === "DISPUTED"
@@ -152,13 +155,12 @@ export default async function OrderPage({
             state={order.state}
             isBuyer={isBuyer}
             isSeller={isSeller}
-            currentUserId={user.id}
             counterpartyId={counterpartyId}
             counterpartyName={counterpartyName}
             expiresAt={order.expires_at}
             amountEtb={formatEtb(order.amount_etb)}
             buyerPaymentName={order.buyer_payment_name}
-            buyerHasMessaged={buyerHasMessaged}
+            sellerHasResponded={sellerHasResponded}
             sellerLastSeen={isBuyer ? counterpartyLastSeen : null}
             dispute={dispute}
           />
