@@ -7,6 +7,7 @@ import {
   getTradePolicy,
   getOrderTtlMinutes,
   getReleaseWindowMinutes,
+  getWithdrawalFee,
   getSweepStrategy,
   getPooledDepositAddress,
 } from "@/lib/settings";
@@ -17,6 +18,7 @@ import { FeeSettingForm } from "./fee-setting-form";
 import { TradePolicyForm } from "./trade-policy-form";
 import { OrderWindowForm } from "./order-window-form";
 import { ReleaseWindowForm } from "./release-window-form";
+import { WithdrawalFeeForm } from "./withdrawal-fee-form";
 import { SweepStrategyForm } from "./sweep-strategy-form";
 import { EnergyStakeForm } from "./energy-stake-form";
 
@@ -37,6 +39,7 @@ export default async function AdminSettingsPage() {
     tradePolicy,
     orderTtl,
     releaseWindow,
+    withdrawalFee,
     sweepStrategy,
     pooledAddress,
     hotEnergy,
@@ -47,6 +50,7 @@ export default async function AdminSettingsPage() {
     getTradePolicy(),
     getOrderTtlMinutes(),
     getReleaseWindowMinutes(),
+    getWithdrawalFee(),
     getSweepStrategy(),
     getPooledDepositAddress(),
     fetchHotWalletEnergy(),
@@ -81,6 +85,7 @@ export default async function AdminSettingsPage() {
         <TradePolicyForm policy={tradePolicy} />
         <OrderWindowForm minutes={orderTtl} />
         <ReleaseWindowForm minutes={releaseWindow} />
+        <WithdrawalFeeForm fee={withdrawalFee} />
     </main>
   );
 }

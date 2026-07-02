@@ -2,8 +2,9 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
-import { toMicros, formatUsdt } from "@/lib/money";
+import { toMicros, fromMicros, formatUsdt } from "@/lib/money";
 import { getChainProvider, WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
+import { getWithdrawalFee } from "@/lib/settings";
 import { createNotification } from "@/lib/notifications";
 import { isValidTronAddress } from "@/lib/chain/address";
 
@@ -44,12 +45,22 @@ export async function requestWithdrawal(args: {
   if (!isValidTronAddress(args.toAddress)) {
     throw new Error("enter a valid Tron (TRC-20) address");
   }
+  // The fee is authoritative server-side (never trusted from the client) and is
+  // baked onto the row at request time, so a later admin change doesn't alter an
+  // already-queued withdrawal. Reject amounts that don't clear the fee up front.
+  const fee = await getWithdrawalFee();
+  if (toMicros(args.amount) <= toMicros(fee)) {
+    throw new Error(
+      `amount must be greater than the ${formatUsdt(fee)} USDT withdrawal fee`,
+    );
+  }
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("withdrawal_request", {
     p_user: args.userId,
     p_to_address: args.toAddress,
     p_amount: args.amount,
     p_threshold: String(WITHDRAWAL_APPROVAL_THRESHOLD),
+    p_fee: fee,
   });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("withdrawal_request returned no id");
@@ -85,7 +96,7 @@ export async function rejectWithdrawal(
 }
 
 const WITHDRAWAL_COLUMNS =
-  "id, user_id, to_address, amount_usdt::text, status, tx_hash, reviewed_by, failure_reason, created_at, reviewed_at, sent_at, confirmed_at";
+  "id, user_id, to_address, amount_usdt::text, fee_usdt::text, status, tx_hash, reviewed_by, failure_reason, created_at, reviewed_at, sent_at, confirmed_at";
 
 /** A user's own withdrawals (RLS session client), newest first. */
 export async function fetchWithdrawalsForUser(
@@ -154,7 +165,7 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
 
   const { data: approved, error } = await supabase
     .from("withdrawals")
-    .select("id, user_id, to_address, amount_usdt::text")
+    .select("id, user_id, to_address, amount_usdt::text, fee_usdt::text")
     .eq("status", "APPROVED")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`failed to load approved withdrawals: ${error.message}`);
@@ -167,7 +178,11 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
     user_id: string;
     to_address: string;
     amount_usdt: string;
+    fee_usdt: string;
   }[]) {
+    // The user receives the NET (gross amount minus the fee); the fee is retained
+    // as platform revenue by withdrawal_mark_sent. Send the net on-chain.
+    const netUsdt = fromMicros(toMicros(w.amount_usdt) - toMicros(w.fee_usdt));
     // 1. CLAIM atomically (APPROVED → SENDING). A row already taken by a concurrent
     //    run (or no longer APPROVED) returns false → skip without broadcasting. A
     //    claim error leaves the row APPROVED for the next run.
@@ -191,14 +206,14 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
 
     // Audit log of the signing attempt — never include keys or full addresses.
     console.info(
-      `[withdrawal-signer] broadcasting ${w.id} amount=${w.amount_usdt} ` +
+      `[withdrawal-signer] broadcasting ${w.id} net=${netUsdt} fee=${w.fee_usdt} ` +
         `to=${w.to_address.slice(0, 6)}… network=${provider.network}`,
     );
 
-    // 2. BROADCAST. A throw here means the funds NEVER left → refund is safe.
+    // 2. BROADCAST the NET. A throw here means the funds NEVER left → refund is safe.
     let txHash: string;
     try {
-      ({ txHash } = await provider.sendUsdt(w.to_address, w.amount_usdt));
+      ({ txHash } = await provider.sendUsdt(w.to_address, netUsdt));
     } catch (e) {
       const reason = e instanceof Error ? e.message : "broadcast failed";
       console.error(`[withdrawal-signer] broadcast FAILED ${w.id}: ${reason}`);
@@ -257,7 +272,10 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
       userId: w.user_id,
       type: "withdrawal_sent",
       title: "Withdrawal sent",
-      body: `${formatUsdt(w.amount_usdt)} USDT broadcast on-chain — awaiting confirmation.`,
+      body:
+        `${formatUsdt(netUsdt)} USDT sent on-chain` +
+        (toMicros(w.fee_usdt) > 0n ? ` (after ${formatUsdt(w.fee_usdt)} fee)` : "") +
+        ` — awaiting confirmation.`,
       href: "/dashboard",
     });
   }

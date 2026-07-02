@@ -385,6 +385,9 @@ export type Database = {
           user_id: string;
           to_address: string;
           amount_usdt: string;
+          // Flat fee charged on the withdrawal (migration 0045); net sent on-chain
+          // = amount_usdt − fee_usdt. The fee accrues to platform revenue.
+          fee_usdt: string;
           status: WithdrawalStatus;
           tx_hash: string | null;
           reviewed_by: string | null;
@@ -462,6 +465,9 @@ export type Database = {
           // Fresh seller release window in minutes (migration 0042) — applied to
           // expires_at when a buyer marks paid, replacing the leftover payment window.
           release_window_minutes: number;
+          // Flat withdrawal fee in USDT (migration 0045) — deducted from each
+          // withdrawal so the user covers on-chain gas.
+          withdrawal_fee_usdt: string;
           // Admin-selectable deposit-gas strategy (migrations 0029 + 0039):
           // 'staking' | 'rental' | 'burn' | 'pooled'. pooled_deposit_address is the
           // shared omnibus address override (null ⇒ use the hot-wallet address).
@@ -695,6 +701,10 @@ export type Database = {
         Args: { p_admin: string; p_minutes: number };
         Returns: undefined;
       };
+      set_withdrawal_fee: {
+        Args: { p_admin: string; p_fee: string };
+        Returns: undefined;
+      };
       touch_presence: {
         Args: { p_user: string };
         Returns: undefined;
@@ -780,6 +790,7 @@ export type Database = {
           p_to_address: string;
           p_amount: string;
           p_threshold?: string;
+          p_fee?: string; // flat withdrawal fee (migration 0045)
         };
         Returns: string; // new withdrawal id
       };

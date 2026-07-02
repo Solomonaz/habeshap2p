@@ -23,6 +23,7 @@ import {
   setTradePolicy,
   setOrderTtlMinutes,
   setReleaseWindowMinutes,
+  setWithdrawalFee,
   setSweepStrategy,
   isLivePaymentsEnabled,
   type SweepStrategy,
@@ -803,6 +804,64 @@ export async function setReleaseWindowAction(
     action: "release_window_set",
     targetType: "platform_settings",
     detail: `seller release window ${minutes} min`,
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+const withdrawalFeeSchema = z.object({
+  fee: z
+    .string()
+    .trim()
+    .refine(
+      (s) => /^\d+(\.\d{1,6})?$/.test(s) && Number(s) >= 0,
+      "Fee must be a non-negative USDT amount (up to 6 decimals)",
+    )
+    .refine((s) => Number(s) <= 100, "Fee can't exceed 100 USDT"),
+});
+
+export type WithdrawalFeeState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the flat withdrawal fee (migration 0045) — deducted from each
+ * withdrawal so the user covers on-chain gas. requestWithdrawal reads this live
+ * and bakes it onto the row, so the new value applies to withdrawals requested
+ * after the change. Same triple authorization as every other admin action.
+ */
+export async function setWithdrawalFeeAction(
+  _prev: WithdrawalFeeState,
+  formData: FormData,
+): Promise<WithdrawalFeeState> {
+  const parsed = withdrawalFeeSchema.safeParse({
+    fee: formData.get("fee") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setWithdrawalFee(user.id, parsed.data.fee);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the withdrawal fee",
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_fee_set",
+    targetType: "platform_settings",
+    detail: `withdrawal fee ${parsed.data.fee} USDT`,
   });
 
   revalidatePath("/admin/settings");

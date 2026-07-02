@@ -14,6 +14,7 @@ import {
   isLivePaymentsEnabled,
   getTradePolicy,
   getSweepStrategy,
+  getWithdrawalFee,
 } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
@@ -75,11 +76,13 @@ export default async function DashboardPage() {
   // (0021), and the sweep strategy (0029). The sweep strategy decides the deposit
   // UX — pooled mode uses one shared address + a unique amount, every other
   // strategy gives the user a stable per-user deposit address.
-  const [livePayments, tradePolicy, sweepStrategy] = await Promise.all([
-    isLivePaymentsEnabled(),
-    getTradePolicy(),
-    getSweepStrategy(),
-  ]);
+  const [livePayments, tradePolicy, sweepStrategy, withdrawalFee] =
+    await Promise.all([
+      isLivePaymentsEnabled(),
+      getTradePolicy(),
+      getSweepStrategy(),
+      getWithdrawalFee(),
+    ]);
 
   // Per-user deposit address only applies to non-pooled strategies. In pooled
   // mode there is no per-user address, so we don't derive one.
@@ -254,6 +257,7 @@ export default async function DashboardPage() {
         available={available}
         networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
         approvalThreshold={WITHDRAWAL_APPROVAL_THRESHOLD}
+        fee={withdrawalFee}
       />
 
       {withdrawals.length > 0 && (

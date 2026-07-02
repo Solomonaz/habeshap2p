@@ -37,6 +37,7 @@ type SettingsRow = {
   tier_established_trades: number | null;
   order_ttl_minutes: number | null;
   release_window_minutes: number | null;
+  withdrawal_fee_usdt: string | null;
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
 };
@@ -45,7 +46,7 @@ const SETTINGS_COLUMNS =
   "live_payments, fee_bps, fee_min_usdt, fee_max_usdt, min_merchant_bond, " +
   "trade_limit_new, trade_limit_active, trade_limit_established, " +
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
-  "release_window_minutes, sweep_strategy, pooled_deposit_address";
+  "release_window_minutes, withdrawal_fee_usdt, sweep_strategy, pooled_deposit_address";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -308,6 +309,38 @@ export async function setReleaseWindowMinutes(
   const { error } = await admin.rpc("set_release_window", {
     p_admin: adminId,
     p_minutes: minutes,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
+}
+
+/** The default flat withdrawal fee (USDT) — mirrors the SQL default. */
+export const DEFAULT_WITHDRAWAL_FEE_USDT = "1";
+
+/**
+ * Read the configured flat withdrawal fee in USDT (migration 0045) — deducted
+ * from every withdrawal so the user covers on-chain gas. Kept as an exact-decimal
+ * string. FAIL-SAFE: any read error returns the SQL default so the fee can never
+ * silently vanish (which would make the platform eat the gas).
+ */
+export async function getWithdrawalFee(): Promise<string> {
+  const row = await getSettingsRow();
+  return row?.withdrawal_fee_usdt ?? DEFAULT_WITHDRAWAL_FEE_USDT;
+}
+
+/**
+ * Set the flat withdrawal fee. Goes through the service-role RPC, which re-checks
+ * is_admin and validates the input (≥ 0). The caller must already have verified
+ * the actor is an admin (see the admin action).
+ */
+export async function setWithdrawalFee(
+  adminId: string,
+  feeUsdt: string,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_withdrawal_fee", {
+    p_admin: adminId,
+    p_fee: feeUsdt,
   });
   if (error) throw new Error(error.message);
   revalidateTag("platform-settings");
