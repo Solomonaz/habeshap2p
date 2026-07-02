@@ -35,7 +35,7 @@ const PROC_STEPS = [
   "Capture looks great",
 ];
 
-const TURN_DEG = 14; // head yaw (degrees) needed to count as a turn
+const TURN_THRESH = 0.1; // nose-vs-eyes yaw proxy needed to count as a turn
 const HOLD_FRAMES = 2; // frames the turn must be held
 const ALIGN_FRAMES = 8; // frames centred before the turn challenge starts
 const ALIGN_FALLBACK_FRAMES = 50; // …or advance anyway after a face is held this long
@@ -72,12 +72,6 @@ function cameraErrorMessage(err: unknown): string {
     "Couldn't open the camera. Allow camera access and try again, or use the " +
     "button below to take the selfie with your camera app."
   );
-}
-
-/** Head yaw in degrees from the 4×4 (column-major) facial-transformation matrix. */
-function yawDegrees(m: Float32Array | number[]): number {
-  // Rotation about the vertical axis: atan2(r02, r22) with r02=m[8], r22=m[10].
-  return (Math.atan2(m[8] ?? 0, m[10] ?? 0) * 180) / Math.PI;
 }
 
 export function LivenessCapture({
@@ -173,10 +167,7 @@ export function LivenessCapture({
   }
 
   type Lm = { x: number; y: number };
-  function analyze(
-    landmarks: Lm[] | undefined,
-    matrix: Float32Array | number[] | undefined,
-  ) {
+  function analyze(landmarks: Lm[] | undefined) {
     const st = stageRef.current;
 
     if (!landmarks || landmarks.length === 0) {
@@ -201,13 +192,23 @@ export function LivenessCapture({
     const cy = (minY + maxY) / 2;
     const w = maxX - minX || 1;
     const h = maxY - minY;
-    // Yaw from the transformation matrix; fall back to a nose-offset estimate.
-    const nose = landmarks[1] ?? { x: cx, y: cy };
-    const yaw = matrix ? yawDegrees(matrix) : ((nose.x - cx) / w) * 70;
+    // Yaw proxy: the nose tip's horizontal offset from the midpoint of the two
+    // eyes, normalised by eye distance. Eyes are stable, symmetric anchors, so
+    // this is ~0 facing forward and swings clearly ± when the head turns. Nose
+    // tip = landmark 1; eye outer corners = 33 and 263.
+    const nose = landmarks[1];
+    const eyeA = landmarks[33];
+    const eyeB = landmarks[263];
+    let yaw = 0;
+    if (nose && eyeA && eyeB) {
+      const eyeMid = (eyeA.x + eyeB.x) / 2;
+      const eyeDist = Math.abs(eyeB.x - eyeA.x) || 0.02;
+      yaw = (nose.x - eyeMid) / eyeDist;
+    }
     facePresentRef.current += 1;
 
     if (diagRef.current) {
-      diagRef.current.textContent = `tracking · size ${h.toFixed(2)} · x ${(1 - cx).toFixed(2)} · yaw ${yaw.toFixed(0)}°`;
+      diagRef.current.textContent = `${st} · size ${h.toFixed(2)} · turn ${yaw.toFixed(2)}`;
     }
 
     if (st === "align") {
@@ -241,7 +242,7 @@ export function LivenessCapture({
     if (st === "turn1") {
       if (h < 0.18) return setPrompt("Keep your face in view", false);
       const dy = yaw - baselineYawRef.current;
-      if (Math.abs(dy) > TURN_DEG) {
+      if (Math.abs(dy) > TURN_THRESH) {
         holdCountRef.current += 1;
         setPrompt("Good — hold it", true);
         if (holdCountRef.current > HOLD_FRAMES) {
@@ -259,8 +260,8 @@ export function LivenessCapture({
     if (st === "turn2") {
       if (h < 0.18) return setPrompt("Keep your face in view", false);
       const dy = yaw - baselineYawRef.current;
-      // Must go the OPPOSITE way from the first turn, by enough degrees.
-      if (dy * turnSignRef.current < -TURN_DEG) {
+      // Must go the OPPOSITE way from the first turn, by enough.
+      if (dy * turnSignRef.current < -TURN_THRESH) {
         holdCountRef.current += 1;
         setPrompt("Good — hold it", true);
         if (holdCountRef.current > HOLD_FRAMES) {
@@ -290,7 +291,7 @@ export function LivenessCapture({
       lastDetectRef.current = now;
       try {
         const res = lm.detectForVideo(v, now);
-        analyze(res.faceLandmarks?.[0], res.facialTransformationMatrixes?.[0]?.data);
+        analyze(res.faceLandmarks?.[0]);
       } catch {
         /* transient inference hiccup — try again next frame */
       }
@@ -305,7 +306,6 @@ export function LivenessCapture({
       baseOptions: { modelAssetPath: MODEL_URL, delegate },
       runningMode: "VIDEO" as const,
       numFaces: 1,
-      outputFacialTransformationMatrixes: true,
     });
     try {
       return await vision.FaceLandmarker.createFromOptions(resolver, opts("GPU"));
