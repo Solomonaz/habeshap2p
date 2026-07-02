@@ -6,8 +6,9 @@ import { createServerSupabase, createAdminSupabase } from "@/lib/supabase/server
 import { toMicros, formatUsdt } from "@/lib/money";
 import { postBond, releaseBond } from "@/lib/merchant";
 import { requestWithdrawal } from "@/lib/withdrawals";
+import { internalTransfer, lookupUserByPublicId } from "@/lib/transfers";
 import { WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
-import { notifyAdmins } from "@/lib/notifications";
+import { notifyAdmins, createNotification } from "@/lib/notifications";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import {
   createPooledDepositIntent,
@@ -267,4 +268,85 @@ export async function requestWithdrawalAction(
 
   revalidatePath("/dashboard");
   return { ok: true };
+}
+
+export type TransferState = { error?: string; ok?: string };
+
+/**
+ * Look up a recipient by their HabeshaP2P ID so the sender can confirm the name
+ * before sending. Read-only; returns the display name or an error. Requires a
+ * signed-in user (no anonymous directory scraping).
+ */
+export async function lookupTransferRecipientAction(
+  recipientId: string,
+): Promise<{ name?: string; error?: string }> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Not signed in" };
+  if (recipientId.replace(/[^0-9]/g, "").length < 4) return {};
+  const found = await lookupUserByPublicId(recipientId);
+  if (!found) return { error: "No account with that HabeshaP2P ID." };
+  if (found.id === user.id) return { error: "That's your own ID." };
+  return { name: found.name };
+}
+
+/**
+ * Send USDT to another user by HabeshaP2P ID — a free, instant, off-chain ledger
+ * move. We authenticate the sender; the SQL enforces verification, funds, and the
+ * self-send / unknown-ID / inactive-account checks.
+ */
+export async function internalTransferAction(
+  _prev: TransferState,
+  formData: FormData,
+): Promise<TransferState> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const recipientId = (formData.get("recipientId") ?? "").toString().trim();
+  const amount = (formData.get("amount") ?? "").toString().trim();
+
+  if (!recipientId) return { error: "Enter the recipient's HabeshaP2P ID." };
+  try {
+    if (toMicros(amount) <= 0n) return { error: "Enter a positive amount." };
+  } catch {
+    return { error: "Enter a valid USDT amount." };
+  }
+
+  let recipientUserId: string;
+  try {
+    recipientUserId = await internalTransfer({
+      senderId: user.id,
+      recipientPublicId: recipientId,
+      amount,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Transfer failed." };
+  }
+
+  // Tell the recipient (best-effort — the transfer already succeeded).
+  try {
+    const { data: me } = await createAdminSupabase()
+      .from("users")
+      .select("full_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    const fromName = me?.full_name?.trim() || "another user";
+    await createNotification({
+      userId: recipientUserId,
+      type: "transfer_received",
+      title: "USDT received",
+      body: `${formatUsdt(amount)} USDT from ${fromName}.`,
+      href: "/dashboard",
+    });
+  } catch {
+    /* notification is best-effort */
+  }
+
+  revalidatePath("/dashboard");
+  return { ok: `Sent ${formatUsdt(amount)} USDT.` };
 }

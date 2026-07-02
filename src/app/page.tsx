@@ -1,5 +1,26 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
+import { SITE_URL, SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
+
+// Organization + WebSite structured data (JSON-LD) so search engines understand
+// the brand and can show a richer result. Rendered as a script in the page.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: `${SITE_URL}/logo.png`,
+      description: SITE_DESCRIPTION,
+    },
+    {
+      "@type": "WebSite",
+      name: SITE_NAME,
+      url: SITE_URL,
+    },
+  ],
+};
 
 // The escrow rail is the product's signature: USDT moves Locked → Paid →
 // Released, and never auto-releases. The landing hero previews it.
@@ -75,6 +96,10 @@ const TRUST_POINTS = [
 export default function Home() {
   return (
     <main className="mx-auto max-w-4xl px-6 pb-20">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }}
+      />
       {/* Top bar */}
       <header className="flex items-center justify-between py-6">
         <Logo height={36} glow />

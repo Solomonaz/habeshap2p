@@ -1,8 +1,14 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { accountIdentity } from "@/lib/identity";
 import { fetchNotifications } from "@/lib/notifications";
 import { AdminShell } from "@/components/admin/admin-shell";
+
+// The admin console must never be indexed (defence beyond the robots.txt disallow).
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 /**
  * Shared chrome + gate for the whole /admin console. Resolving the admin check

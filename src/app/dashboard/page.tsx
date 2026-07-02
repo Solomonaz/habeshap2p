@@ -21,6 +21,7 @@ import { accountLabel } from "@/lib/identity";
 import Link from "next/link";
 import { MerchantBond } from "./merchant-bond";
 import { WithdrawForm } from "./withdraw-form";
+import { InternalTransferForm } from "./internal-transfer-form";
 import { PooledDeposit } from "./pooled-deposit";
 import { devFaucet } from "./actions";
 
@@ -57,7 +58,7 @@ export default async function DashboardPage() {
     supabase
       .from("users")
       .select(
-        "reputation_score, completed_trades, completion_rate, is_merchant, kyc_status, account_status, ban_reason",
+        "public_id, reputation_score, completed_trades, completion_rate, is_merchant, kyc_status, account_status, ban_reason",
       )
       .eq("id", user.id)
       .single(),
@@ -69,6 +70,7 @@ export default async function DashboardPage() {
   const frozen = wallet?.usdt_frozen ?? "0";
   const accountStatus = profile?.account_status ?? "ACTIVE";
   const banReason = profile?.ban_reason ?? null;
+  const myPublicId = profile?.public_id ?? "";
   const isFrozen = accountStatus === "FROZEN";
   const isBanned = accountStatus === "BANNED";
 
@@ -252,6 +254,8 @@ export default async function DashboardPage() {
           </p>
         </section>
       )}
+
+      <InternalTransferForm available={available} myPublicId={myPublicId} />
 
       <WithdrawForm
         available={available}

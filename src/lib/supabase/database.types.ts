@@ -58,6 +58,8 @@ export type Database = {
       users: {
         Row: {
           id: string;
+          // Short shareable account number (migration 0046) for internal transfers.
+          public_id: string;
           full_name: string | null;
           phone: string | null;
           email: string | null;
@@ -704,6 +706,12 @@ export type Database = {
       set_withdrawal_fee: {
         Args: { p_admin: string; p_fee: string };
         Returns: undefined;
+      };
+      internal_transfer: {
+        // Free off-chain USDT transfer to another user by HabeshaP2P ID
+        // (migration 0046). Returns the recipient's user id.
+        Args: { p_sender: string; p_recipient_id: string; p_amount: string };
+        Returns: string;
       };
       touch_presence: {
         Args: { p_user: string };
