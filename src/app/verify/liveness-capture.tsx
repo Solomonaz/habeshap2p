@@ -4,15 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 
 /**
- * Guided liveness selfie (Persona-style). Opens the front camera, runs Google's
- * MediaPipe FaceLandmarker ENTIRELY ON-DEVICE (no frame ever leaves the browser),
- * and walks the user through: center the face → turn head left → turn head right
- * → auto-capture → a brief "analyzing" pass → done.
+ * Guided liveness selfie. Opens the front camera and runs Google's MediaPipe
+ * FaceLandmarker ENTIRELY ON-DEVICE (no frame ever leaves the browser). It walks
+ * the user through: center the face → turn head one way → turn the other way →
+ * auto-capture → a brief "analyzing" pass → done.
  *
- * Everything here is an ASSIST, never a hard gate: a "Capture now" button is
- * always available, and if the model can't load (old browser, blocked CDN, no
- * WebGL) we fall back to a plain manual capture so a legitimate user is never
- * stuck. The real identity check is still the human admin review.
+ * The head-turn detection is REAL: it reads the head's yaw angle from the model's
+ * facial-transformation matrix each frame. The direction is AUTO-CALIBRATED — the
+ * first detected turn defines "this way", the second must be the OPPOSITE way — so
+ * "left"/"right" can never be mislabelled, and it genuinely proves the head moved
+ * both directions (a static photo can't).
+ *
+ * Everything is an ASSIST, never a hard gate: a "Capture now" button is always
+ * available, and if the model can't load we fall back to plain manual capture, so
+ * a legitimate user is never stuck. The real identity check is the admin review.
+ *
+ * Append ?kycdebug=1 to the URL to see the live tracking numbers (face size, x,
+ * yaw°) overlaid — handy to confirm detection is working and to tune thresholds.
  */
 
 const WASM_URL =
@@ -20,7 +28,6 @@ const WASM_URL =
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-// Cosmetic "analyzing" steps shown right after a capture.
 const PROC_STEPS = [
   "Analyzing your selfie…",
   "Checking lighting & focus…",
@@ -28,14 +35,14 @@ const PROC_STEPS = [
   "Capture looks great",
 ];
 
-// Head-turn sign. By construction, turning your head to YOUR left points your
-// nose toward the camera's right (raw +x), so noseRel goes positive. If left/right
-// feel swapped on a real device, flip this single constant to -1.
-const TURN_SIGN = 1;
-const TURN_T = 0.13; // how far the nose must swing (fraction of face width)
+const TURN_DEG = 14; // head yaw (degrees) needed to count as a turn
+const HOLD_FRAMES = 2; // frames the turn must be held
+const ALIGN_FRAMES = 8; // frames centred before the turn challenge starts
+const ALIGN_FALLBACK_FRAMES = 50; // …or advance anyway after a face is held this long
+const DETECT_MS = 60; // ~16 fps inference
 
 type CapturePhase = "idle" | "live" | "processing" | "captured";
-type GuideStage = "loading" | "align" | "turnLeft" | "turnRight" | "done";
+type GuideStage = "loading" | "align" | "turn1" | "turn2" | "done";
 
 /** Turns a getUserMedia rejection into something the user can act on. */
 function cameraErrorMessage(err: unknown): string {
@@ -67,6 +74,12 @@ function cameraErrorMessage(err: unknown): string {
   );
 }
 
+/** Head yaw in degrees from the 4×4 (column-major) facial-transformation matrix. */
+function yawDegrees(m: Float32Array | number[]): number {
+  // Rotation about the vertical axis: atan2(r02, r22) with r02=m[8], r22=m[10].
+  return (Math.atan2(m[8] ?? 0, m[10] ?? 0) * 180) / Math.PI;
+}
+
 export function LivenessCapture({
   onCapture,
 }: {
@@ -76,23 +89,35 @@ export function LivenessCapture({
   const streamRef = useRef<MediaStream | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const rafRef = useRef<number | null>(null);
-  const lastVideoTimeRef = useRef(-1);
+  const lastDetectRef = useRef(0);
   const stageRef = useRef<GuideStage>("loading");
   const alignCountRef = useRef(0);
+  const facePresentRef = useRef(0);
   const holdCountRef = useRef(0);
+  const baselineYawRef = useRef(0);
+  const turnSignRef = useRef(0);
   const promptRef = useRef<HTMLParagraphElement>(null);
   const ovalRef = useRef<HTMLDivElement>(null);
+  const diagRef = useRef<HTMLParagraphElement>(null);
 
   const [phase, setPhase] = useState<CapturePhase>("idle");
   const [stage, setStage] = useState<GuideStage>("loading");
-  const [leftDone, setLeftDone] = useState(false);
-  const [rightDone, setRightDone] = useState(false);
+  const [turn1Done, setTurn1Done] = useState(false);
+  const [turn2Done, setTurn2Done] = useState(false);
   const [modelFailed, setModelFailed] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [camError, setCamError] = useState<string | null>(null);
   const [showFallback, setShowFallback] = useState(false);
   const [procStep, setProcStep] = useState(0);
   const [flash, setFlash] = useState(false);
+  const [debug, setDebug] = useState(false);
+
+  useEffect(() => {
+    setDebug(
+      typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).has("kycdebug"),
+    );
+  }, []);
 
   function failLiveCamera(message: string) {
     setCamError(message);
@@ -106,7 +131,6 @@ export function LivenessCapture({
     streamRef.current = null;
   }
 
-  // Stop camera + detection and revoke the preview URL on unmount.
   useEffect(() => {
     return () => {
       stopStream();
@@ -115,7 +139,6 @@ export function LivenessCapture({
     };
   }, [previewUrl]);
 
-  // Drive the cosmetic "analyzing" pass, then reveal the captured photo.
   useEffect(() => {
     if (phase !== "processing") return;
     setProcStep(0);
@@ -141,24 +164,29 @@ export function LivenessCapture({
     setStage(next);
     alignCountRef.current = 0;
     holdCountRef.current = 0;
-    if (next === "turnLeft") setPrompt("Slowly turn your head LEFT", false);
-    if (next === "turnRight") setPrompt("Now turn your head RIGHT", false);
+    if (next === "turn1") setPrompt("Slowly turn your head LEFT", false);
+    if (next === "turn2") setPrompt("Now turn your head RIGHT", false);
     if (next === "done") {
       setPrompt("Liveness confirmed ✓", true);
       window.setTimeout(() => capture(), 550);
     }
   }
 
-  // Per-frame face analysis. Updates the prompt/oval via refs (no re-render) and
-  // advances the stage machine on the transitions.
-  function analyze(landmarks: Array<{ x: number; y: number }> | undefined) {
+  type Lm = { x: number; y: number };
+  function analyze(
+    landmarks: Lm[] | undefined,
+    matrix: Float32Array | number[] | undefined,
+  ) {
     const st = stageRef.current;
+
     if (!landmarks || landmarks.length === 0) {
       alignCountRef.current = 0;
       holdCountRef.current = 0;
+      if (diagRef.current) diagRef.current.textContent = "no face detected";
       setPrompt("Position your face in the circle", false);
       return;
     }
+
     let minX = 1,
       maxX = 0,
       minY = 1,
@@ -173,30 +201,53 @@ export function LivenessCapture({
     const cy = (minY + maxY) / 2;
     const w = maxX - minX || 1;
     const h = maxY - minY;
+    // Yaw from the transformation matrix; fall back to a nose-offset estimate.
     const nose = landmarks[1] ?? { x: cx, y: cy };
-    const noseRel = ((nose.x - cx) / w) * TURN_SIGN;
-    const mcx = 1 - cx; // mirrored display centre (preview is a mirror)
+    const yaw = matrix ? yawDegrees(matrix) : ((nose.x - cx) / w) * 70;
+    facePresentRef.current += 1;
+
+    if (diagRef.current) {
+      diagRef.current.textContent = `tracking · size ${h.toFixed(2)} · x ${(1 - cx).toFixed(2)} · yaw ${yaw.toFixed(0)}°`;
+    }
 
     if (st === "align") {
-      if (h < 0.3) return setPrompt("Move closer", false);
-      if (h > 0.9) return setPrompt("Move back", false);
-      if (mcx < 0.35) return setPrompt("Move right →", false);
-      if (mcx > 0.65) return setPrompt("← Move left", false);
-      if (cy < 0.35) return setPrompt("Move down", false);
-      if (cy > 0.65) return setPrompt("Move up", false);
+      const mcx = 1 - cx; // mirrored display centre (preview is a mirror)
+      let off: string | null = null;
+      if (h < 0.22) off = "Move closer";
+      else if (h > 0.96) off = "Move back";
+      else if (mcx < 0.3) off = "Move right →";
+      else if (mcx > 0.7) off = "← Move left";
+      else if (cy < 0.26) off = "Move down";
+      else if (cy > 0.74) off = "Move up";
+      // Nudge only early on; after a face has been held a while, advance anyway
+      // so imperfect framing never traps the user on this step.
+      if (off && facePresentRef.current < ALIGN_FALLBACK_FRAMES) {
+        alignCountRef.current = 0;
+        setPrompt(off, false);
+        return;
+      }
       alignCountRef.current += 1;
       setPrompt("Hold still…", true);
-      if (alignCountRef.current > 8) toStage("turnLeft");
+      if (
+        alignCountRef.current > ALIGN_FRAMES ||
+        facePresentRef.current > ALIGN_FALLBACK_FRAMES
+      ) {
+        baselineYawRef.current = yaw; // remember the forward-facing yaw
+        toStage("turn1");
+      }
       return;
     }
-    if (st === "turnLeft") {
-      if (h < 0.25) return setPrompt("Keep your face in view", false);
-      if (noseRel > TURN_T) {
+
+    if (st === "turn1") {
+      if (h < 0.18) return setPrompt("Keep your face in view", false);
+      const dy = yaw - baselineYawRef.current;
+      if (Math.abs(dy) > TURN_DEG) {
         holdCountRef.current += 1;
-        setPrompt("Turning… hold", true);
-        if (holdCountRef.current > 3) {
-          setLeftDone(true);
-          toStage("turnRight");
+        setPrompt("Good — hold it", true);
+        if (holdCountRef.current > HOLD_FRAMES) {
+          turnSignRef.current = Math.sign(dy); // this direction = "one side"
+          setTurn1Done(true);
+          toStage("turn2");
         }
       } else {
         holdCountRef.current = 0;
@@ -204,13 +255,16 @@ export function LivenessCapture({
       }
       return;
     }
-    if (st === "turnRight") {
-      if (h < 0.25) return setPrompt("Keep your face in view", false);
-      if (noseRel < -TURN_T) {
+
+    if (st === "turn2") {
+      if (h < 0.18) return setPrompt("Keep your face in view", false);
+      const dy = yaw - baselineYawRef.current;
+      // Must go the OPPOSITE way from the first turn, by enough degrees.
+      if (dy * turnSignRef.current < -TURN_DEG) {
         holdCountRef.current += 1;
-        setPrompt("Turning… hold", true);
-        if (holdCountRef.current > 3) {
-          setRightDone(true);
+        setPrompt("Good — hold it", true);
+        if (holdCountRef.current > HOLD_FRAMES) {
+          setTurn2Done(true);
           toStage("done");
         }
       } else {
@@ -229,11 +283,14 @@ export function LivenessCapture({
       if (st !== "done") rafRef.current = requestAnimationFrame(detectLoop);
       return;
     }
-    if (v.readyState >= 2 && v.currentTime !== lastVideoTimeRef.current) {
-      lastVideoTimeRef.current = v.currentTime;
+    const now = performance.now();
+    // Sample on a time cadence (not on video.currentTime, which can stall) so
+    // detection keeps running reliably.
+    if (v.readyState >= 2 && v.videoWidth > 0 && now - lastDetectRef.current >= DETECT_MS) {
+      lastDetectRef.current = now;
       try {
-        const res = lm.detectForVideo(v, performance.now());
-        analyze(res.faceLandmarks?.[0]);
+        const res = lm.detectForVideo(v, now);
+        analyze(res.faceLandmarks?.[0], res.facialTransformationMatrixes?.[0]?.data);
       } catch {
         /* transient inference hiccup — try again next frame */
       }
@@ -244,12 +301,12 @@ export function LivenessCapture({
   async function createLandmarker(): Promise<FaceLandmarker> {
     const vision = await import("@mediapipe/tasks-vision");
     const resolver = await vision.FilesetResolver.forVisionTasks(WASM_URL);
-    const opts = (delegate: "GPU" | "CPU") =>
-      ({
-        baseOptions: { modelAssetPath: MODEL_URL, delegate },
-        runningMode: "VIDEO" as const,
-        numFaces: 1,
-      }) as const;
+    const opts = (delegate: "GPU" | "CPU") => ({
+      baseOptions: { modelAssetPath: MODEL_URL, delegate },
+      runningMode: "VIDEO" as const,
+      numFaces: 1,
+      outputFacialTransformationMatrixes: true,
+    });
     try {
       return await vision.FaceLandmarker.createFromOptions(resolver, opts("GPU"));
     } catch {
@@ -260,21 +317,23 @@ export function LivenessCapture({
   async function startGuide() {
     stageRef.current = "loading";
     setStage("loading");
-    setLeftDone(false);
-    setRightDone(false);
+    setTurn1Done(false);
+    setTurn2Done(false);
+    alignCountRef.current = 0;
+    facePresentRef.current = 0;
+    holdCountRef.current = 0;
+    turnSignRef.current = 0;
     try {
       if (!landmarkerRef.current) {
         landmarkerRef.current = await createLandmarker();
       }
-      // Camera may have been cancelled while the model loaded.
-      if (!streamRef.current) return;
+      if (!streamRef.current) return; // camera cancelled while model loaded
       stageRef.current = "align";
       setStage("align");
-      lastVideoTimeRef.current = -1;
-      alignCountRef.current = 0;
+      lastDetectRef.current = 0;
       rafRef.current = requestAnimationFrame(detectLoop);
     } catch {
-      setModelFailed(true); // fall back to plain manual capture
+      setModelFailed(true);
     }
   }
 
@@ -384,8 +443,8 @@ export function LivenessCapture({
     onCapture(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
-    setLeftDone(false);
-    setRightDone(false);
+    setTurn1Done(false);
+    setTurn2Done(false);
     stageRef.current = "loading";
     setPhase("idle");
   }
@@ -440,7 +499,6 @@ export function LivenessCapture({
               muted
               className="w-full -scale-x-100"
             />
-            {/* Face guide oval — recoloured green by setPrompt() when aligned. */}
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
               <div
                 ref={ovalRef}
@@ -448,7 +506,6 @@ export function LivenessCapture({
                 style={{ borderColor: "#f5b43c" }}
               />
             </div>
-            {/* Live prompt (updated every frame via ref, no re-render). */}
             <p
               ref={promptRef}
               className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm font-semibold text-white drop-shadow"
@@ -463,18 +520,24 @@ export function LivenessCapture({
                 />
               </div>
             )}
+            <p
+              ref={diagRef}
+              className={
+                "pointer-events-none absolute inset-x-0 bottom-1 text-center text-[10px] font-medium text-white/80 " +
+                (debug ? "" : "hidden")
+              }
+            />
           </div>
 
-          {/* Step chips: Center → Turn left → Turn right */}
           {!modelFailed && (
             <div className="mt-2 flex flex-wrap gap-2 text-xs">
               <StepChip
                 label="Center"
                 active={stage === "align"}
-                done={stage === "turnLeft" || stage === "turnRight" || stage === "done"}
+                done={stage === "turn1" || stage === "turn2" || stage === "done"}
               />
-              <StepChip label="Turn left" active={stage === "turnLeft"} done={leftDone} />
-              <StepChip label="Turn right" active={stage === "turnRight"} done={rightDone} />
+              <StepChip label="Turn left" active={stage === "turn1"} done={turn1Done} />
+              <StepChip label="Turn right" active={stage === "turn2"} done={turn2Done} />
             </div>
           )}
 
