@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/lib/env";
 import { sweepDeposits } from "@/lib/sweeper";
 import { withCronLock } from "@/lib/cron-lock";
+import { recordCronRun } from "@/lib/monitor";
 
 // Moves on-chain USDT from deposit addresses into the hot wallet, so it must
 // never be statically cached or pre-rendered.
@@ -44,6 +45,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   const outcome = await withCronLock("sweep-deposits", () => sweepDeposits(), {
     ttlSeconds: 900,
   });
+  await recordCronRun("sweep-deposits", true);
   if (!outcome.ran) {
     return NextResponse.json({
       ok: true,

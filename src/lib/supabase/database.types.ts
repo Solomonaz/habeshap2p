@@ -584,6 +584,19 @@ export type Database = {
         Update: Record<string, never>;
         Relationships: [];
       };
+      cron_heartbeats: {
+        // Per-cron last-run stamp (migration 0044). Service-role only; written by
+        // record_cron_run, read by the monitor + pre-flight page.
+        Row: {
+          name: string;
+          last_run_at: string;
+          last_ok: boolean;
+          runs: number;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: {
       public_profiles: {
@@ -827,6 +840,15 @@ export type Database = {
         // Read-only: is this ID number already APPROVED on another account?
         Args: { p_id_number: string; p_exclude_user: string };
         Returns: boolean;
+      };
+      record_cron_run: {
+        Args: { p_name: string; p_ok: boolean };
+        Returns: undefined;
+      };
+      platform_liabilities_usdt: {
+        // Total USDT owed to users across all wallet buckets (exact, as text).
+        Args: Record<string, never>;
+        Returns: string;
       };
       kyc_reject: {
         Args: { p_id: string; p_admin: string; p_reason: string };

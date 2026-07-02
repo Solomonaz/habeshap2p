@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/lib/env";
 import { pollDeposits } from "@/lib/deposits";
+import { recordCronRun } from "@/lib/monitor";
 
 // Credits user balances from confirmed on-chain deposits, so it must never be
 // statically cached or pre-rendered.
@@ -34,6 +35,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   }
 
   const result = await pollDeposits();
+  await recordCronRun("poll-deposits", true);
   return NextResponse.json({ ok: true, ...result });
 }
 

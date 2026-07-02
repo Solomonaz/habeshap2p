@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/lib/env";
 import { processApprovedWithdrawals } from "@/lib/withdrawals";
 import { withCronLock } from "@/lib/cron-lock";
+import { recordCronRun } from "@/lib/monitor";
 
 // This route SIGNS and broadcasts on-chain transfers (burns escrowed USDT), so
 // it must never be statically cached or pre-rendered.
@@ -43,6 +44,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     () => processApprovedWithdrawals(),
     { ttlSeconds: 600 },
   );
+  await recordCronRun("process-withdrawals", true);
   if (!outcome.ran) {
     return NextResponse.json({
       ok: true,

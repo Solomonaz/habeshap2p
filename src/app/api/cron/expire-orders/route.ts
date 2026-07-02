@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getServerEnv } from "@/lib/env";
 import { expireUnpaid, freezeOverdue } from "@/lib/orders";
+import { recordCronRun } from "@/lib/monitor";
 
 // This route moves money (returns escrowed USDT to sellers), so it must never
 // be statically cached or pre-rendered.
@@ -39,6 +40,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
 
   const cancelled = await expireUnpaid();
   const frozen = await freezeOverdue();
+  await recordCronRun("expire-orders", true);
   return NextResponse.json({ ok: true, cancelled, frozen });
 }
 

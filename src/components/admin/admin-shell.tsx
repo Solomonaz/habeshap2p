@@ -61,6 +61,11 @@ const NAV: {
     icon: <Icon path={<><path d="M4 19V5" /><path d="M4 19h16" /><rect x="7" y="11" width="3" height="5" /><rect x="12" y="7" width="3" height="9" /><rect x="17" y="13" width="3" height="3" /></>} />,
   },
   {
+    href: "/admin/preflight",
+    label: "Pre-flight",
+    icon: <Icon path={<><path d="M12 2a7 7 0 0 1 7 7c0 3-2 5.5-4 7l-3 4-3-4c-2-1.5-4-4-4-7a7 7 0 0 1 7-7z" /><circle cx="12" cy="9" r="2.5" /></>} />,
+  },
+  {
     href: "/admin/withdrawals",
     label: "Withdrawals",
     icon: <Icon path={<><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></>} />,
