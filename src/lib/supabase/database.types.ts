@@ -171,6 +171,10 @@ export type Database = {
           status: AdStatus;
           payer_name: string | null;
           notes: string | null;
+          // Receiver's payment account for SELL ads (migration 0047).
+          receiving_name: string | null;
+          receiving_number: string | null;
+          receiving_note: string | null;
           created_at: string;
         };
         Insert: {
@@ -184,6 +188,9 @@ export type Database = {
           status?: AdStatus;
           payer_name?: string | null;
           notes?: string | null;
+          receiving_name?: string | null;
+          receiving_number?: string | null;
+          receiving_note?: string | null;
           created_at?: string;
         };
         Update: {
@@ -216,6 +223,10 @@ export type Database = {
           state: OrderState;
           payment_method: PaymentMethod;
           buyer_payment_name: string;
+          // Receiver's payment account snapshotted at order creation (migration 0047).
+          receiving_name: string | null;
+          receiving_number: string | null;
+          receiving_note: string | null;
           paid_at: string | null;
           released_at: string | null;
           cancelled_at: string | null;
@@ -690,6 +701,10 @@ export type Database = {
           p_payment_method: PaymentMethod;
           p_buyer_payment_name: string;
           p_ttl_minutes?: number;
+          // Receiver's account for a BUY ad (taker/seller supplies it; migration 0047).
+          p_receiving_name?: string;
+          p_receiving_number?: string;
+          p_receiving_note?: string;
         };
         Returns: string; // new order id
       };

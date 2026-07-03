@@ -25,6 +25,11 @@ export async function createOrder(args: {
   paymentMethod: PaymentMethod;
   buyerPaymentName: string;
   ttlMinutes?: number;
+  // The receiver's account, supplied only when the taker is the seller (BUY ad).
+  // Ignored by the SQL for SELL ads (it reads the account off the ad instead).
+  receivingName?: string;
+  receivingNumber?: string;
+  receivingNote?: string;
 }): Promise<string> {
   if (toMicros(args.amountUsdt) <= 0n) {
     throw new Error("order amount must be positive");
@@ -37,6 +42,9 @@ export async function createOrder(args: {
     p_payment_method: args.paymentMethod,
     p_buyer_payment_name: args.buyerPaymentName,
     ...(args.ttlMinutes ? { p_ttl_minutes: args.ttlMinutes } : {}),
+    ...(args.receivingName ? { p_receiving_name: args.receivingName } : {}),
+    ...(args.receivingNumber ? { p_receiving_number: args.receivingNumber } : {}),
+    ...(args.receivingNote ? { p_receiving_note: args.receivingNote } : {}),
   });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("order_create returned no id");
@@ -126,7 +134,7 @@ export async function freezeOverdue(): Promise<number> {
 }
 
 const ORDER_COLUMNS =
-  "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, paid_at, released_at, cancelled_at, expires_at, created_at";
+  "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, receiving_name, receiving_number, receiving_note, paid_at, released_at, cancelled_at, expires_at, created_at";
 
 /** Orders the user is a party to (buyer or seller), newest first. RLS-scoped. */
 export async function fetchMyOrders(

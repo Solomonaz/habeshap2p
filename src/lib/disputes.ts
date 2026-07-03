@@ -94,7 +94,7 @@ export async function fetchDisputesForAdmin(
 ): Promise<AdminDisputeSummary[]> {
   const supabase = createAdminSupabase();
   const orderCols =
-    "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, paid_at, released_at, cancelled_at, expires_at, created_at";
+    "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, receiving_name, receiving_number, receiving_note, paid_at, released_at, cancelled_at, expires_at, created_at";
   const base = supabase
     .from("disputes")
     .select(`${DISPUTE_COLUMNS}, order:orders(${orderCols})`);
@@ -188,7 +188,7 @@ export async function fetchDisputeDetailForAdmin(
   if (!dispute) return null;
 
   const orderCols =
-    "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, paid_at, released_at, cancelled_at, expires_at, created_at";
+    "id, ad_id, buyer_id, seller_id, amount_usdt::text, rate_etb::text, amount_etb::text, fee_usdt::text, state, payment_method, buyer_payment_name, receiving_name, receiving_number, receiving_note, paid_at, released_at, cancelled_at, expires_at, created_at";
   const { data: order, error: oErr } = await supabase
     .from("orders")
     .select(orderCols)

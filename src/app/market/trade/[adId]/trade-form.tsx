@@ -174,30 +174,93 @@ export function TradeForm({
         </label>
 
         {takerIsBuyer ? (
-          <label className="block">
-            <span className="text-sm font-medium text-ink">
-              Your payment-account name
-            </span>
-            <input
-              type="text"
-              name="buyer_payment_name"
-              autoComplete="name"
-              placeholder="Full name on your Telebirr / bank account"
-              className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
-            />
-            <span className="mt-1 block text-xs text-ink-faint">
-              The seller will release only if the ETB arrives from this exact
-              name.
-            </span>
-          </label>
+          <>
+            <label className="block">
+              <span className="text-sm font-medium text-ink">
+                Your payment-account name
+              </span>
+              <input
+                type="text"
+                name="buyer_payment_name"
+                autoComplete="name"
+                placeholder="Full name on your Telebirr / bank account"
+                className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+              />
+              <span className="mt-1 block text-xs text-ink-faint">
+                The seller will release only if the ETB arrives from this exact
+                name.
+              </span>
+            </label>
+
+            {/* Where the buyer sends the Birr — the seller's receiving account. */}
+            {ad.receiving_name && ad.receiving_number && (
+              <div className="rounded-md border border-amber/40 bg-amber-wash px-3 py-2.5 text-sm">
+                <p className="text-xs font-medium uppercase tracking-wide text-amber">
+                  Send the Birr to
+                </p>
+                <p className="mt-1 text-ink">
+                  <span className="text-ink-muted">Name: </span>
+                  {ad.receiving_name}
+                </p>
+                <p className="text-ink">
+                  <span className="text-ink-muted">
+                    {PAYMENT_METHOD_LABELS[method]}:{" "}
+                  </span>
+                  <span className="font-amount">{ad.receiving_number}</span>
+                </p>
+                {ad.receiving_note && (
+                  <p className="mt-1 text-xs text-ink-soft">
+                    {ad.receiving_note}
+                  </p>
+                )}
+                <p className="mt-1.5 text-xs text-ink-faint">
+                  You&apos;ll confirm these details again once the order opens.
+                </p>
+              </div>
+            )}
+          </>
         ) : (
-          <div className="rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-sm">
-            <span className="text-ink-muted">You receive ETB from</span>{" "}
-            <span className="text-ink">{ad.payer_name ?? "—"}</span>
-            <p className="mt-1 text-xs text-ink-faint">
-              Refuse to release if the payment comes from a different name.
-            </p>
-          </div>
+          <>
+            <div className="rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-sm">
+              <span className="text-ink-muted">You receive ETB from</span>{" "}
+              <span className="text-ink">{ad.payer_name ?? "—"}</span>
+              <p className="mt-1 text-xs text-ink-faint">
+                Refuse to release if the payment comes from a different name.
+              </p>
+            </div>
+
+            {/* The seller (taker) tells the buyer where to send the Birr. */}
+            <div className="rounded-md border border-paper-border bg-paper-sunken p-3">
+              <p className="text-sm font-medium text-ink">
+                Where should the buyer pay you?
+              </p>
+              <p className="mt-0.5 text-xs text-ink-faint">
+                Your {PAYMENT_METHOD_LABELS[method]} account — shown to the buyer
+                so they know where to send the Birr.
+              </p>
+              <input
+                type="text"
+                name="receiving_name"
+                autoComplete="off"
+                placeholder="Account holder full name"
+                className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+              />
+              <input
+                type="text"
+                name="receiving_number"
+                autoComplete="off"
+                placeholder="Account number / phone (e.g. 09xxxxxxxx)"
+                className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+              />
+              <input
+                type="text"
+                name="receiving_note"
+                autoComplete="off"
+                placeholder="Note for buyer (optional)"
+                className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber"
+              />
+            </div>
+          </>
         )}
 
         {state.error && (

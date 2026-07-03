@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import { AD_SIDES, PAYMENT_METHODS } from "@/types/domain";
+import { AD_SIDES, PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
 import { PAYMENT_METHOD_LABELS, SIDE_LABELS } from "@/lib/labels";
 import { formatRate, formatEtb } from "@/lib/format";
 import {
@@ -39,6 +39,10 @@ export function AdForm({
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
   const [notes, setNotes] = useState("");
+  // SELL ads receive on a single account, so the method is a single choice.
+  const [sellMethod, setSellMethod] = useState<PaymentMethod>(
+    PAYMENT_METHODS[0],
+  );
 
   const showPreview =
     rate !== "" || min !== "" || max !== "" || notes.trim() !== "";
@@ -177,30 +181,97 @@ export function AdForm({
         </label>
       )}
 
-      <fieldset>
-        <legend className="text-sm font-medium text-ink">
-          Payment methods
-        </legend>
-        <p className="mt-0.5 text-xs text-ink-faint">
-          Only irreversible rails are allowed.
-        </p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {PAYMENT_METHODS.map((m) => (
-            <label
-              key={m}
-              className="flex cursor-pointer items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink-soft has-[:checked]:border-amber has-[:checked]:bg-amber-wash has-[:checked]:text-amber"
-            >
+      {side === "SELL" ? (
+        <fieldset>
+          <legend className="text-sm font-medium text-ink">
+            Pick a payment method
+          </legend>
+          <p className="mt-0.5 text-xs text-ink-faint">
+            The account you&apos;ll receive the Birr on. Only irreversible rails
+            are allowed.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {PAYMENT_METHODS.map((m) => (
+              <label
+                key={m}
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink-soft has-[:checked]:border-amber has-[:checked]:bg-amber-wash has-[:checked]:text-amber"
+              >
+                <input
+                  type="radio"
+                  name="payment_methods"
+                  value={m}
+                  checked={sellMethod === m}
+                  onChange={() => setSellMethod(m)}
+                  className="sr-only"
+                />
+                {PAYMENT_METHOD_LABELS[m]}
+              </label>
+            ))}
+          </div>
+
+          {/* Receiving details for the chosen method — where the buyer pays. */}
+          <div className="mt-4 rounded-card border border-paper-border bg-paper-sunken p-4">
+            <h3 className="text-sm font-medium text-ink">
+              {PAYMENT_METHOD_LABELS[sellMethod]} receiving details
+            </h3>
+            <label className="mt-3 block">
               <input
-                type="checkbox"
-                name="payment_methods"
-                value={m}
-                className="h-4 w-4 accent-amber"
+                type="text"
+                name="receiving_name"
+                autoComplete="off"
+                placeholder="Account holder full name"
+                className="w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
               />
-              {PAYMENT_METHOD_LABELS[m]}
+              <span className="mt-0.5 block text-xs text-ink-faint">
+                Enter the exact name registered on your{" "}
+                {PAYMENT_METHOD_LABELS[sellMethod]} account.
+              </span>
             </label>
-          ))}
-        </div>
-      </fieldset>
+            <input
+              type="text"
+              name="receiving_number"
+              autoComplete="off"
+              placeholder="Account number / phone (e.g. 09xxxxxxxx)"
+              className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+            />
+            <input
+              type="text"
+              name="receiving_note"
+              autoComplete="off"
+              placeholder="Note for buyer (optional)"
+              className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber"
+            />
+            <p className="mt-2 text-xs text-ink-faint">
+              Make sure the name matches the one registered on your account.
+            </p>
+          </div>
+        </fieldset>
+      ) : (
+        <fieldset>
+          <legend className="text-sm font-medium text-ink">
+            Accepted methods (pick any)
+          </legend>
+          <p className="mt-0.5 text-xs text-ink-faint">
+            Only irreversible rails are allowed.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {PAYMENT_METHODS.map((m) => (
+              <label
+                key={m}
+                className="flex cursor-pointer items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink-soft has-[:checked]:border-amber has-[:checked]:bg-amber-wash has-[:checked]:text-amber"
+              >
+                <input
+                  type="checkbox"
+                  name="payment_methods"
+                  value={m}
+                  className="h-4 w-4 accent-amber"
+                />
+                {PAYMENT_METHOD_LABELS[m]}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
 
       <label className="block">
         <span className="text-sm font-medium text-ink">Notes (optional)</span>

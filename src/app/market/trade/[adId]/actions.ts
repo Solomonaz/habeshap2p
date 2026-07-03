@@ -48,6 +48,11 @@ const schema = z.object({
   // Only meaningful when the taker is the buyer (SELL ad). The SQL ignores it
   // for BUY ads (it uses the advertiser's stored payer_name instead).
   buyer_payment_name: z.string().trim().optional(),
+  // Only meaningful when the taker is the seller (BUY ad): the account the buyer
+  // pays into. The SQL requires it for BUY ads and ignores it for SELL ads.
+  receiving_name: z.string().trim().optional(),
+  receiving_number: z.string().trim().optional(),
+  receiving_note: z.string().trim().optional(),
 });
 
 export type OpenOrderState = { error?: string };
@@ -61,6 +66,9 @@ export async function openOrder(
     amount_usdt: formData.get("amount_usdt"),
     payment_method: formData.get("payment_method"),
     buyer_payment_name: formData.get("buyer_payment_name") ?? undefined,
+    receiving_name: formData.get("receiving_name") ?? undefined,
+    receiving_number: formData.get("receiving_number") ?? undefined,
+    receiving_note: formData.get("receiving_note") ?? undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -82,6 +90,9 @@ export async function openOrder(
       amountUsdt: parsed.data.amount_usdt,
       paymentMethod: parsed.data.payment_method,
       buyerPaymentName: parsed.data.buyer_payment_name ?? "",
+      receivingName: parsed.data.receiving_name,
+      receivingNumber: parsed.data.receiving_number,
+      receivingNote: parsed.data.receiving_note,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Could not open order";

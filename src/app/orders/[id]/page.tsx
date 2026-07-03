@@ -147,6 +147,42 @@ export default async function OrderPage({
               </p>
             )}
           </div>
+
+          {/* Where the Birr goes — the seller's receiving account, emphasised
+              for the buyer (who must pay it). */}
+          {order.receiving_name && order.receiving_number && (
+            <div
+              className={
+                "mt-3 rounded-md px-3 py-2.5 text-sm " +
+                (isBuyer
+                  ? "border border-amber/40 bg-amber-wash"
+                  : "bg-paper-sunken")
+              }
+            >
+              <p className="text-ink-muted">
+                {isBuyer ? "Send the Birr to" : "You receive the Birr at"}
+              </p>
+              <p className="mt-0.5 font-medium text-ink">
+                {order.receiving_name}
+              </p>
+              <p className="text-ink">
+                <span className="text-ink-muted">
+                  {PAYMENT_METHOD_LABELS[order.payment_method]}:{" "}
+                </span>
+                <span className="font-amount">{order.receiving_number}</span>
+              </p>
+              {order.receiving_note && (
+                <p className="mt-1 text-xs text-ink-soft">
+                  {order.receiving_note}
+                </p>
+              )}
+              {isBuyer && (
+                <p className="mt-1 text-xs text-amber">
+                  Pay this exact account. Keep your payment proof.
+                </p>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="mt-4">

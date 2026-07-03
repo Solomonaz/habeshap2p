@@ -26,6 +26,11 @@ const createAdSchema = z
     // For BUY ads the advertiser IS the buyer, so we capture the name they will
     // pay from now (rule #2) — it is copied onto each order a seller takes.
     payer_name: z.string().trim().optional(),
+    // For SELL ads the advertiser IS the seller (receives the Birr), so we capture
+    // the account the buyer must pay into — shown to every buyer who takes the ad.
+    receiving_name: z.string().trim().max(120).optional(),
+    receiving_number: z.string().trim().max(60).optional(),
+    receiving_note: z.string().trim().max(200).optional(),
     // Optional free-text note shown to anyone who opens the ad (online hours,
     // payment timing, instructions). Capped to match the DB check (≤ 500).
     notes: z
@@ -41,6 +46,14 @@ const createAdSchema = z
   .refine((v) => v.side !== "BUY" || (v.payer_name?.length ?? 0) > 0, {
     message: "Enter the payment-account name you will pay from",
     path: ["payer_name"],
+  })
+  .refine((v) => v.side !== "SELL" || (v.receiving_name?.length ?? 0) > 0, {
+    message: "Enter the account holder name that receives the Birr",
+    path: ["receiving_name"],
+  })
+  .refine((v) => v.side !== "SELL" || (v.receiving_number?.length ?? 0) > 0, {
+    message: "Enter the account number / phone that receives the Birr",
+    path: ["receiving_number"],
   });
 
 export type CreateAdState = { error?: string };
@@ -56,6 +69,9 @@ export async function createAd(
     max_etb: formData.get("max_etb"),
     payment_methods: formData.getAll("payment_methods"),
     payer_name: formData.get("payer_name") ?? undefined,
+    receiving_name: formData.get("receiving_name") ?? undefined,
+    receiving_number: formData.get("receiving_number") ?? undefined,
+    receiving_note: formData.get("receiving_note") ?? undefined,
     notes: formData.get("notes") ?? undefined,
   });
 
@@ -127,6 +143,16 @@ export async function createAd(
     max_etb: parsed.data.max_etb,
     payment_methods: parsed.data.payment_methods,
     payer_name: parsed.data.side === "BUY" ? parsed.data.payer_name : null,
+    receiving_name:
+      parsed.data.side === "SELL" ? (parsed.data.receiving_name ?? null) : null,
+    receiving_number:
+      parsed.data.side === "SELL"
+        ? (parsed.data.receiving_number ?? null)
+        : null,
+    receiving_note:
+      parsed.data.side === "SELL"
+        ? (parsed.data.receiving_note ? parsed.data.receiving_note : null)
+        : null,
     notes: parsed.data.notes ? parsed.data.notes : null,
     status: "ACTIVE",
   });
