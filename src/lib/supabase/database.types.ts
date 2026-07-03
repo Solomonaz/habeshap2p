@@ -35,10 +35,19 @@ export type LedgerType =
 export type AccountStatus = "ACTIVE" | "FROZEN" | "BANNED";
 export type PaymentMethod =
   | "TELEBIRR"
+  | "MPESA"
+  | "CBE_BIRR"
   | "CBE"
-  | "ABYSSINIA"
   | "AWASH"
-  | "DASHEN";
+  | "DASHEN"
+  | "ABYSSINIA"
+  | "WEGAGEN"
+  | "HIBRET"
+  | "NIB"
+  | "ZEMEN"
+  | "BUNNA"
+  | "OROMIA"
+  | "COOP_OROMIA";
 export type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED";
 export type DisputeResolution = "FAVOUR_BUYER" | "FAVOUR_SELLER";
 export type ChainDirection = "IN" | "OUT";

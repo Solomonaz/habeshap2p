@@ -52,10 +52,19 @@ export type LedgerType = (typeof LEDGER_TYPES)[number];
 /** Whitelisted irreversible payment rails only (spec rule #3). */
 export const PAYMENT_METHODS = [
   "TELEBIRR",
+  "MPESA",
+  "CBE_BIRR",
   "CBE",
-  "ABYSSINIA",
   "AWASH",
   "DASHEN",
+  "ABYSSINIA",
+  "WEGAGEN",
+  "HIBRET",
+  "NIB",
+  "ZEMEN",
+  "BUNNA",
+  "OROMIA",
+  "COOP_OROMIA",
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 

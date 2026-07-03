@@ -3,10 +3,19 @@ import type { PaymentMethod, AdSide } from "@/types/domain";
 /** Human labels for the whitelisted payment rails. */
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TELEBIRR: "Telebirr",
-  CBE: "CBE",
-  ABYSSINIA: "Bank of Abyssinia",
+  MPESA: "M-Pesa",
+  CBE_BIRR: "CBE Birr",
+  CBE: "Commercial Bank of Ethiopia",
   AWASH: "Awash Bank",
   DASHEN: "Dashen Bank",
+  ABYSSINIA: "Bank of Abyssinia",
+  WEGAGEN: "Wegagen Bank",
+  HIBRET: "Hibret Bank (United)",
+  NIB: "Nib International Bank",
+  ZEMEN: "Zemen Bank",
+  BUNNA: "Bunna Bank",
+  OROMIA: "Oromia Bank",
+  COOP_OROMIA: "Cooperative Bank of Oromia",
 };
 
 /**
@@ -15,10 +24,19 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
  */
 export const PAYMENT_METHOD_COLOR: Record<PaymentMethod, string> = {
   TELEBIRR: "#0ecb81",
+  MPESA: "#e11d48",
+  CBE_BIRR: "#7c3aed",
   CBE: "#8b5cf6",
-  ABYSSINIA: "#f6465d",
   AWASH: "#f0b90b",
   DASHEN: "#3b82f6",
+  ABYSSINIA: "#f6465d",
+  WEGAGEN: "#0891b2",
+  HIBRET: "#16a34a",
+  NIB: "#ea580c",
+  ZEMEN: "#0d9488",
+  BUNNA: "#a16207",
+  OROMIA: "#4f46e5",
+  COOP_OROMIA: "#65a30d",
 };
 
 /** Ad side described from the advertiser's perspective. */
