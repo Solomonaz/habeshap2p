@@ -43,19 +43,19 @@ export function VerifyForm({
 
   const step = STEPS[stepIdx];
 
-  // Preview URLs for the review screen (revoked on change/unmount).
+  // Preview URLs for the review screen. Each is revoked ONLY when its own file
+  // changes (or on unmount) — a single combined effect would revoke the still-in-
+  // use front/back URLs the moment the selfie URL was created, breaking their
+  // thumbnails.
   const frontUrl = useMemo(() => (idDoc ? URL.createObjectURL(idDoc) : null), [idDoc]);
   const backUrl = useMemo(() => (idBack ? URL.createObjectURL(idBack) : null), [idBack]);
   const selfieUrl = useMemo(
     () => (liveness ? URL.createObjectURL(liveness) : null),
     [liveness],
   );
-  useEffect(
-    () => () => {
-      [frontUrl, backUrl, selfieUrl].forEach((u) => u && URL.revokeObjectURL(u));
-    },
-    [frontUrl, backUrl, selfieUrl],
-  );
+  useEffect(() => () => { if (frontUrl) URL.revokeObjectURL(frontUrl); }, [frontUrl]);
+  useEffect(() => () => { if (backUrl) URL.revokeObjectURL(backUrl); }, [backUrl]);
+  useEffect(() => () => { if (selfieUrl) URL.revokeObjectURL(selfieUrl); }, [selfieUrl]);
 
   function go(next: Step) {
     setError(null);

@@ -35,8 +35,8 @@ const PROC_STEPS = [
   "Capture looks great",
 ];
 
-const TURN_THRESH = 0.1; // nose-vs-eyes yaw proxy needed to count as a turn
-const HOLD_FRAMES = 2; // frames the turn must be held
+const TURN_THRESH = 0.08; // head-turn signal needed to count as a turn
+const HOLD_FRAMES = 1; // frames the turn must be held
 const ALIGN_FRAMES = 8; // frames centred before the turn challenge starts
 const ALIGN_FALLBACK_FRAMES = 50; // …or advance anyway after a face is held this long
 const DETECT_MS = 60; // ~16 fps inference
@@ -93,6 +93,7 @@ export function LivenessCapture({
   const promptRef = useRef<HTMLParagraphElement>(null);
   const ovalRef = useRef<HTMLDivElement>(null);
   const diagRef = useRef<HTMLParagraphElement>(null);
+  const meterRef = useRef<HTMLDivElement>(null);
 
   const [phase, setPhase] = useState<CapturePhase>("idle");
   const [stage, setStage] = useState<GuideStage>("loading");
@@ -192,18 +193,20 @@ export function LivenessCapture({
     const cy = (minY + maxY) / 2;
     const w = maxX - minX || 1;
     const h = maxY - minY;
-    // Yaw proxy: the nose tip's horizontal offset from the midpoint of the two
-    // eyes, normalised by eye distance. Eyes are stable, symmetric anchors, so
-    // this is ~0 facing forward and swings clearly ± when the head turns. Nose
-    // tip = landmark 1; eye outer corners = 33 and 263.
+    // Yaw signal: the nose's distance to each eye. Facing forward the two are
+    // equal (ratio ~0); turning the head shortens the near side and lengthens the
+    // far side, so the normalised difference swings clearly ±. Using full 2-D
+    // distances (not a single x-offset) makes it robust to the exact landmark and
+    // to the face drifting around the frame. Nose = 1; eye outer corners = 33/263.
     const nose = landmarks[1];
     const eyeA = landmarks[33];
     const eyeB = landmarks[263];
     let yaw = 0;
     if (nose && eyeA && eyeB) {
-      const eyeMid = (eyeA.x + eyeB.x) / 2;
-      const eyeDist = Math.abs(eyeB.x - eyeA.x) || 0.02;
-      yaw = (nose.x - eyeMid) / eyeDist;
+      const dL = Math.hypot(nose.x - eyeA.x, nose.y - eyeA.y);
+      const dR = Math.hypot(nose.x - eyeB.x, nose.y - eyeB.y);
+      const sum = dL + dR;
+      yaw = sum > 0 ? (dL - dR) / sum : 0;
     }
     facePresentRef.current += 1;
 
@@ -242,9 +245,10 @@ export function LivenessCapture({
     if (st === "turn1") {
       if (h < 0.18) return setPrompt("Keep your face in view", false);
       const dy = yaw - baselineYawRef.current;
+      setMeter(Math.abs(dy) / TURN_THRESH);
       if (Math.abs(dy) > TURN_THRESH) {
         holdCountRef.current += 1;
-        setPrompt("Good — hold it", true);
+        setPrompt("Great — hold it", true);
         if (holdCountRef.current > HOLD_FRAMES) {
           turnSignRef.current = Math.sign(dy); // this direction = "one side"
           setTurn1Done(true);
@@ -260,10 +264,11 @@ export function LivenessCapture({
     if (st === "turn2") {
       if (h < 0.18) return setPrompt("Keep your face in view", false);
       const dy = yaw - baselineYawRef.current;
-      // Must go the OPPOSITE way from the first turn, by enough.
+      // Must go the OPPOSITE way from the first turn.
+      setMeter((-dy * turnSignRef.current) / TURN_THRESH);
       if (dy * turnSignRef.current < -TURN_THRESH) {
         holdCountRef.current += 1;
-        setPrompt("Good — hold it", true);
+        setPrompt("Great — hold it", true);
         if (holdCountRef.current > HOLD_FRAMES) {
           setTurn2Done(true);
           toStage("done");
@@ -274,6 +279,15 @@ export function LivenessCapture({
       }
       return;
     }
+  }
+
+  // Fill the on-screen turn meter (0..1) so the user sees the turn registering
+  // and knows how far to go.
+  function setMeter(ratio: number) {
+    if (!meterRef.current) return;
+    const pct = Math.max(0, Math.min(1, ratio)) * 100;
+    meterRef.current.style.width = `${pct.toFixed(0)}%`;
+    meterRef.current.style.background = pct >= 100 ? "#1d9e75" : "#f5b43c";
   }
 
   function detectLoop() {
@@ -518,6 +532,20 @@ export function LivenessCapture({
                   className="inline-block h-6 w-6 rounded-full border-2 border-amber border-t-transparent"
                   style={{ animation: "kycSpin .7s linear infinite" }}
                 />
+              </div>
+            )}
+            {(stage === "turn1" || stage === "turn2") && (
+              <div className="pointer-events-none absolute inset-x-6 bottom-5">
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/25">
+                  <div
+                    ref={meterRef}
+                    className="h-2.5 rounded-full transition-[width] duration-100"
+                    style={{ width: "0%", background: "#f5b43c" }}
+                  />
+                </div>
+                <p className="mt-1 text-center text-[10px] font-medium text-white/90">
+                  Keep turning until the bar fills
+                </p>
               </div>
             )}
             <p
