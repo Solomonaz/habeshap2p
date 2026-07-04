@@ -23,10 +23,10 @@ export function SettingsWorkspace({ sections }: { sections: SettingsSection[] })
   const [active, setActive] = useState(sections[0]?.id);
 
   return (
-    <div className="mt-8 grid gap-6 lg:grid-cols-[13.5rem_1fr]">
+    <div className="mt-8">
       <nav
         aria-label="Settings sections"
-        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:sticky lg:top-6 lg:mx-0 lg:h-fit lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-4"
       >
         {sections.map((s) => {
           const isActive = s.id === active;
@@ -37,7 +37,7 @@ export function SettingsWorkspace({ sections }: { sections: SettingsSection[] })
               onClick={() => setActive(s.id)}
               aria-current={isActive ? "page" : undefined}
               className={
-                "group flex shrink-0 items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors lg:w-full " +
+                "group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors " +
                 (isActive
                   ? "border-transparent bg-ink text-paper shadow-sm"
                   : "border-paper-border bg-paper-raised text-ink-soft hover:border-ink/20 hover:text-ink")
@@ -59,7 +59,7 @@ export function SettingsWorkspace({ sections }: { sections: SettingsSection[] })
                 </span>
                 <span
                   className={
-                    "mt-0.5 hidden truncate text-xs leading-tight lg:block " +
+                    "mt-0.5 hidden truncate text-xs leading-tight sm:block " +
                     (isActive ? "text-paper/70" : "text-ink-faint")
                   }
                 >
@@ -71,7 +71,7 @@ export function SettingsWorkspace({ sections }: { sections: SettingsSection[] })
         })}
       </nav>
 
-      <div className="min-w-0">
+      <div className="mt-6 min-w-0">
         {sections.map((s) => (
           <section
             key={s.id}
