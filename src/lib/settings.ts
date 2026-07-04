@@ -38,6 +38,8 @@ type SettingsRow = {
   order_ttl_minutes: number | null;
   release_window_minutes: number | null;
   withdrawal_fee_usdt: string | null;
+  seller_fee_bps: number | null;
+  internal_transfer_fee_usdt: string | null;
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
 };
@@ -46,7 +48,8 @@ const SETTINGS_COLUMNS =
   "live_payments, fee_bps, fee_min_usdt, fee_max_usdt, min_merchant_bond, " +
   "trade_limit_new, trade_limit_active, trade_limit_established, " +
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
-  "release_window_minutes, withdrawal_fee_usdt, sweep_strategy, pooled_deposit_address";
+  "release_window_minutes, withdrawal_fee_usdt, seller_fee_bps, " +
+  "internal_transfer_fee_usdt, sweep_strategy, pooled_deposit_address";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -339,6 +342,50 @@ export async function setWithdrawalFee(
 ): Promise<void> {
   const admin = createAdminSupabase();
   const { error } = await admin.rpc("set_withdrawal_fee", {
+    p_admin: adminId,
+    p_fee: feeUsdt,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
+}
+
+/**
+ * The seller-side trade fee in basis points (migration 0049). Charged to the
+ * seller (from their available balance) on a completed trade — 0 disables it.
+ * FAIL-SAFE: any read error returns 0 so a hiccup can never over-charge sellers.
+ */
+export async function getSellerFeeBps(): Promise<number> {
+  const row = await getSettingsRow();
+  return row?.seller_fee_bps ?? 0;
+}
+
+/** Set the seller-side trade fee (bps). Admin-gated in SQL. */
+export async function setSellerFee(adminId: string, bps: number): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_seller_fee", {
+    p_admin: adminId,
+    p_bps: bps,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
+}
+
+/**
+ * The flat internal-transfer fee in USDT (migration 0049) — deducted from a
+ * transfer so the recipient gets amount − fee. "0" = free. FAIL-SAFE to "0".
+ */
+export async function getInternalTransferFee(): Promise<string> {
+  const row = await getSettingsRow();
+  return row?.internal_transfer_fee_usdt ?? "0";
+}
+
+/** Set the flat internal-transfer fee. Admin-gated in SQL. */
+export async function setInternalTransferFee(
+  adminId: string,
+  feeUsdt: string,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_internal_transfer_fee", {
     p_admin: adminId,
     p_fee: feeUsdt,
   });

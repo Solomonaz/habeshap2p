@@ -11,10 +11,12 @@ import { setPlatformFeeAction, type FeeState } from "../actions";
  */
 export function FeeSettingForm({
   percent,
+  sellerPercent,
   min,
   max,
 }: {
   percent: string;
+  sellerPercent: string;
   min: string;
   max: string | null;
 }) {
@@ -27,19 +29,20 @@ export function FeeSettingForm({
     <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-ink">Trade commission fee</h2>
+          <h2 className="text-sm font-medium text-ink">Trade commission fees</h2>
           <p className="mt-1 text-xs text-ink-faint">
-            Charged to the buyer when a seller releases escrow on a completed P2P
-            trade. Set the percentage to 0 to disable it.
+            Charged on a completed P2P trade when the seller releases escrow. The
+            buyer fee comes out of the buyer&apos;s USDT; the seller fee comes out
+            of the seller&apos;s balance. Set a percentage to 0 to disable it.
           </p>
         </div>
       </div>
 
       <form action={formAction} className="mt-4 space-y-4">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-ink-soft">
-              Fee percentage
+              Buyer fee %
             </span>
             <div className="mt-1 flex items-center gap-2">
               <input
@@ -53,7 +56,25 @@ export function FeeSettingForm({
               <span className="text-sm text-ink-faint">%</span>
             </div>
           </label>
+          <label className="block">
+            <span className="text-xs font-medium text-ink-soft">
+              Seller fee %
+            </span>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                name="seller_percent"
+                type="text"
+                inputMode="decimal"
+                defaultValue={sellerPercent}
+                placeholder="0"
+                className="w-full rounded-md border border-paper-border bg-paper px-3 py-2 text-sm text-ink"
+              />
+              <span className="text-sm text-ink-faint">%</span>
+            </div>
+          </label>
+        </div>
 
+        <div className="grid gap-4 sm:grid-cols-2">
           <label className="block">
             <span className="text-xs font-medium text-ink-soft">
               Minimum fee
@@ -90,8 +111,9 @@ export function FeeSettingForm({
         </div>
 
         <p className="text-xs text-ink-faint">
-          Leave minimum blank for no floor and maximum blank for no cap. Fees are
-          rounded to 6 decimals and never exceed the trade amount.
+          The min/max clamp applies to the <b>buyer</b> fee. Leave minimum blank
+          for no floor, maximum blank for no cap. Fees round to 6 decimals and
+          never exceed the trade amount.
         </p>
 
         {state.error && (

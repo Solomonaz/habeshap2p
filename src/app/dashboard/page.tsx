@@ -15,6 +15,7 @@ import {
   getTradePolicy,
   getSweepStrategy,
   getWithdrawalFee,
+  getInternalTransferFee,
 } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
@@ -78,12 +79,13 @@ export default async function DashboardPage() {
   // (0021), and the sweep strategy (0029). The sweep strategy decides the deposit
   // UX — pooled mode uses one shared address + a unique amount, every other
   // strategy gives the user a stable per-user deposit address.
-  const [livePayments, tradePolicy, sweepStrategy, withdrawalFee] =
+  const [livePayments, tradePolicy, sweepStrategy, withdrawalFee, transferFee] =
     await Promise.all([
       isLivePaymentsEnabled(),
       getTradePolicy(),
       getSweepStrategy(),
       getWithdrawalFee(),
+      getInternalTransferFee(),
     ]);
 
   // Per-user deposit address only applies to non-pooled strategies. In pooled
@@ -255,7 +257,11 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      <InternalTransferForm available={available} myPublicId={myPublicId} />
+      <InternalTransferForm
+        available={available}
+        myPublicId={myPublicId}
+        fee={transferFee}
+      />
 
       <WithdrawForm
         available={available}

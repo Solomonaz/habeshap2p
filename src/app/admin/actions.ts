@@ -24,6 +24,8 @@ import {
   setOrderTtlMinutes,
   setReleaseWindowMinutes,
   setWithdrawalFee,
+  setSellerFee,
+  setInternalTransferFee,
   setSweepStrategy,
   isLivePaymentsEnabled,
   type SweepStrategy,
@@ -500,6 +502,11 @@ const feeSchema = z.object({
     .trim()
     .refine((s) => PERCENT_RE.test(s), "Enter a percentage like 0.25 or 1")
     .refine((s) => Number(s) >= 0 && Number(s) <= 100, "Fee must be 0–100%"),
+  seller_percent: z
+    .string()
+    .trim()
+    .refine((s) => PERCENT_RE.test(s), "Enter a seller fee like 0.25 or 1")
+    .refine((s) => Number(s) >= 0 && Number(s) <= 100, "Seller fee must be 0–100%"),
   min: z.string().trim().optional(),
   max: z.string().trim().optional(),
 });
@@ -520,6 +527,7 @@ export async function setPlatformFeeAction(
 ): Promise<FeeState> {
   const parsed = feeSchema.safeParse({
     percent: formData.get("percent") ?? "",
+    seller_percent: formData.get("seller_percent") ?? "0",
     min: formData.get("min") ?? "",
     max: formData.get("max") ?? "",
   });
@@ -530,6 +538,7 @@ export async function setPlatformFeeAction(
   // percent → bps via exact integer micros (percent has ≤4 dp → bps integer).
   // toMicros(percent) yields percent×1e6; ×100 (bps per percent) / 1e6 = bps.
   let bps: number;
+  let sellerBps: number;
   let minStr = "0";
   let maxStr: string | null = null;
   try {
@@ -538,6 +547,12 @@ export async function setPlatformFeeAction(
       return { error: "Fee percentage is too precise (max 0.01% steps)" };
     }
     bps = Number(bpsMicros / 1_000_000n);
+
+    const sBpsMicros = toMicros(parsed.data.seller_percent) * 100n;
+    if (sBpsMicros % 1_000_000n !== 0n) {
+      return { error: "Seller fee percentage is too precise (max 0.01% steps)" };
+    }
+    sellerBps = Number(sBpsMicros / 1_000_000n);
 
     if (parsed.data.min) {
       minStr = parsed.data.min;
@@ -564,6 +579,7 @@ export async function setPlatformFeeAction(
 
   try {
     await setPlatformFee(user.id, { bps, min: minStr, max: maxStr });
+    await setSellerFee(user.id, sellerBps);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not set the fee" };
   }
@@ -810,7 +826,7 @@ export async function setReleaseWindowAction(
   return { ok: true };
 }
 
-const withdrawalFeeSchema = z.object({
+const feeUsdtSchema = z.object({
   fee: z
     .string()
     .trim()
@@ -820,8 +836,46 @@ const withdrawalFeeSchema = z.object({
     )
     .refine((s) => Number(s) <= 100, "Fee can't exceed 100 USDT"),
 });
+const withdrawalFeeSchema = feeUsdtSchema;
 
 export type WithdrawalFeeState = { error?: string; ok?: boolean };
+export type TransferFeeState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the flat internal-transfer fee (migration 0049) — deducted from a
+ * transfer so the recipient gets amount − fee. 0 = free. Same triple auth.
+ */
+export async function setInternalTransferFeeAction(
+  _prev: TransferFeeState,
+  formData: FormData,
+): Promise<TransferFeeState> {
+  const parsed = feeUsdtSchema.safeParse({ fee: formData.get("fee") ?? "" });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" };
+
+  try {
+    await setInternalTransferFee(user.id, parsed.data.fee);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the transfer fee",
+    };
+  }
+  await recordAdminAction({
+    adminId: user.id,
+    action: "transfer_fee_set",
+    targetType: "platform_settings",
+    detail: `internal transfer fee ${parsed.data.fee} USDT`,
+  });
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
 
 /**
  * Admin sets the flat withdrawal fee (migration 0045) — deducted from each

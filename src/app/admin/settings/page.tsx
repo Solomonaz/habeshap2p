@@ -8,6 +8,8 @@ import {
   getOrderTtlMinutes,
   getReleaseWindowMinutes,
   getWithdrawalFee,
+  getSellerFeeBps,
+  getInternalTransferFee,
   getSweepStrategy,
   getPooledDepositAddress,
 } from "@/lib/settings";
@@ -19,6 +21,7 @@ import { TradePolicyForm } from "./trade-policy-form";
 import { OrderWindowForm } from "./order-window-form";
 import { ReleaseWindowForm } from "./release-window-form";
 import { WithdrawalFeeForm } from "./withdrawal-fee-form";
+import { TransferFeeForm } from "./transfer-fee-form";
 import { SweepStrategyForm } from "./sweep-strategy-form";
 import { EnergyStakeForm } from "./energy-stake-form";
 
@@ -40,6 +43,8 @@ export default async function AdminSettingsPage() {
     orderTtl,
     releaseWindow,
     withdrawalFee,
+    sellerFeeBps,
+    transferFee,
     sweepStrategy,
     pooledAddress,
     hotEnergy,
@@ -51,6 +56,8 @@ export default async function AdminSettingsPage() {
     getOrderTtlMinutes(),
     getReleaseWindowMinutes(),
     getWithdrawalFee(),
+    getSellerFeeBps(),
+    getInternalTransferFee(),
     getSweepStrategy(),
     getPooledDepositAddress(),
     fetchHotWalletEnergy(),
@@ -58,12 +65,14 @@ export default async function AdminSettingsPage() {
 
   // Stored as basis points; the admin works in percent (100 bps = 1%). Exact
   // integer→decimal so e.g. 25 bps renders as "0.25", 100 as "1".
-  const feePercent = (() => {
-    const whole = Math.trunc(fee.bps / 100);
-    const frac = fee.bps % 100;
+  const bpsToPercent = (bps: number) => {
+    const whole = Math.trunc(bps / 100);
+    const frac = bps % 100;
     if (frac === 0) return String(whole);
     return `${whole}.${String(frac).padStart(2, "0").replace(/0+$/, "")}`;
-  })();
+  };
+  const feePercent = bpsToPercent(fee.bps);
+  const sellerPercent = bpsToPercent(sellerFeeBps);
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
@@ -81,11 +90,17 @@ export default async function AdminSettingsPage() {
             error={hotEnergy.error}
           />
         )}
-        <FeeSettingForm percent={feePercent} min={fee.min} max={fee.max} />
+        <FeeSettingForm
+          percent={feePercent}
+          sellerPercent={sellerPercent}
+          min={fee.min}
+          max={fee.max}
+        />
         <TradePolicyForm policy={tradePolicy} />
         <OrderWindowForm minutes={orderTtl} />
         <ReleaseWindowForm minutes={releaseWindow} />
         <WithdrawalFeeForm fee={withdrawalFee} />
+        <TransferFeeForm fee={transferFee} />
     </main>
   );
 }

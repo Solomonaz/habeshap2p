@@ -17,9 +17,11 @@ import {
 export function InternalTransferForm({
   available,
   myPublicId,
+  fee,
 }: {
   available: string;
   myPublicId: string;
+  fee: string;
 }) {
   const [state, formAction, pending] = useActionState<TransferState, FormData>(
     internalTransferAction,
@@ -51,8 +53,13 @@ export function InternalTransferForm({
   }, [recipientId]);
 
   const amtNum = Number(amount);
+  const feeNum = Number(fee) || 0;
+  const net = Number.isFinite(amtNum) && amtNum > feeNum ? amtNum - feeNum : null;
   const canSend =
-    !!lookup?.name && Number.isFinite(amtNum) && amtNum > 0 && !pending;
+    !!lookup?.name &&
+    Number.isFinite(amtNum) &&
+    amtNum > feeNum &&
+    !pending;
 
   function copyId() {
     void navigator.clipboard?.writeText(myPublicId).then(() => {
@@ -154,6 +161,21 @@ export function InternalTransferForm({
             {pending ? "Sending…" : "Send"}
           </button>
         </div>
+
+        {feeNum > 0 && amount.trim() !== "" && (
+          <div className="rounded-md bg-paper-sunken px-3 py-2 text-xs">
+            <div className="flex items-center justify-between text-ink-muted">
+              <span>Transfer fee</span>
+              <span className="font-amount">−{formatUsdt(fee)} USDT</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between font-medium text-ink">
+              <span>Recipient gets</span>
+              <span className="font-amount">
+                {net !== null ? `${formatUsdt(String(net))} USDT` : "—"}
+              </span>
+            </div>
+          </div>
+        )}
       </form>
     </section>
   );

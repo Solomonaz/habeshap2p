@@ -229,6 +229,8 @@ export type Database = {
           rate_etb: string;
           amount_etb: string;
           fee_usdt: string;
+          // Seller-side trade fee charged at release (migration 0049).
+          seller_fee_usdt: string;
           state: OrderState;
           payment_method: PaymentMethod;
           buyer_payment_name: string;
@@ -490,6 +492,9 @@ export type Database = {
           // Flat withdrawal fee in USDT (migration 0045) — deducted from each
           // withdrawal so the user covers on-chain gas.
           withdrawal_fee_usdt: string;
+          // Seller trade fee in bps + flat internal-transfer fee (migration 0049).
+          seller_fee_bps: number;
+          internal_transfer_fee_usdt: string;
           // Admin-selectable deposit-gas strategy (migrations 0029 + 0039):
           // 'staking' | 'rental' | 'burn' | 'pooled'. pooled_deposit_address is the
           // shared omnibus address override (null ⇒ use the hot-wallet address).
@@ -728,6 +733,14 @@ export type Database = {
         Returns: undefined;
       };
       set_withdrawal_fee: {
+        Args: { p_admin: string; p_fee: string };
+        Returns: undefined;
+      };
+      set_seller_fee: {
+        Args: { p_admin: string; p_bps: number };
+        Returns: undefined;
+      };
+      set_internal_transfer_fee: {
         Args: { p_admin: string; p_fee: string };
         Returns: undefined;
       };

@@ -119,12 +119,20 @@ export default async function OrderPage({
               </span>
             </Row>
             {order.state === "RELEASED" && (
-              <Row label="Taker fee">
+              <Row label="Buyer fee">
                 <span className="font-amount text-ink-faint">
                   {formatUsdt(order.fee_usdt)} USDT
                 </span>
               </Row>
             )}
+            {order.state === "RELEASED" &&
+              Number(order.seller_fee_usdt) > 0 && (
+                <Row label="Seller fee">
+                  <span className="font-amount text-ink-faint">
+                    {formatUsdt(order.seller_fee_usdt)} USDT
+                  </span>
+                </Row>
+              )}
           </dl>
 
           {/* Real-name matching (rule #2) — emphasised for the seller. */}
