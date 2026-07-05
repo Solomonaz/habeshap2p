@@ -13,6 +13,7 @@ import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { traderName } from "@/lib/handle";
 import { PresenceBadge } from "@/components/presence-badge";
+import { CopyButton } from "@/components/copy-button";
 import { OrderControls } from "./order-controls";
 import { OrderChat } from "./order-chat";
 
@@ -109,8 +110,14 @@ export default async function OrderPage({
               </span>
             </Row>
             <Row label={isBuyer ? "You pay" : "You receive"}>
-              <span className="font-amount text-ink">
-                {formatEtb(order.amount_etb)} ETB
+              <span className="flex items-center gap-2">
+                <span className="font-amount text-ink">
+                  {formatEtb(order.amount_etb)} ETB
+                </span>
+                <CopyButton
+                  value={Number(order.amount_etb).toFixed(2)}
+                  ariaLabel="Copy amount"
+                />
               </span>
             </Row>
             <Row label="Payment method">
@@ -170,15 +177,25 @@ export default async function OrderPage({
               <p className="text-ink-muted">
                 {isBuyer ? "Send the Birr to" : "You receive the Birr at"}
               </p>
-              <p className="mt-0.5 font-medium text-ink">
-                {order.receiving_name}
-              </p>
-              <p className="text-ink">
-                <span className="text-ink-muted">
-                  {PAYMENT_METHOD_LABELS[order.payment_method]}:{" "}
-                </span>
-                <span className="font-amount">{order.receiving_number}</span>
-              </p>
+              <div className="mt-0.5 flex items-center justify-between gap-2">
+                <p className="font-medium text-ink">{order.receiving_name}</p>
+                <CopyButton
+                  value={order.receiving_name}
+                  ariaLabel="Copy name"
+                />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-ink">
+                  <span className="text-ink-muted">
+                    {PAYMENT_METHOD_LABELS[order.payment_method]}:{" "}
+                  </span>
+                  <span className="font-amount">{order.receiving_number}</span>
+                </p>
+                <CopyButton
+                  value={order.receiving_number}
+                  ariaLabel="Copy number"
+                />
+              </div>
               {order.receiving_note && (
                 <p className="mt-1 text-xs text-ink-soft">
                   {order.receiving_note}

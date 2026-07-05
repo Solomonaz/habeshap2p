@@ -7,6 +7,7 @@ import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
 import { formatEtb, formatRate } from "@/lib/format";
 import { formatTradeLimit } from "@/lib/reputation";
 import { traderName } from "@/lib/handle";
+import { CopyButton } from "@/components/copy-button";
 import { openOrder, type OpenOrderState } from "./actions";
 
 export function TradeForm({
@@ -147,13 +148,18 @@ export function TradeForm({
         </label>
 
         <div className="rounded-md bg-paper-sunken px-3 py-2 text-sm">
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between gap-2">
             <span className="text-ink-muted">
               {takerIsBuyer ? "You pay" : "You receive"}
             </span>
-            <span className="font-amount text-ink">
-              {etb > 0 ? formatEtb(String(etb)) : "—"} ETB
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-amount text-ink">
+                {etb > 0 ? formatEtb(String(etb)) : "—"} ETB
+              </span>
+              {etb > 0 && (
+                <CopyButton value={etb.toFixed(2)} ariaLabel="Copy amount" />
+              )}
+            </div>
           </div>
         </div>
 
@@ -198,16 +204,28 @@ export function TradeForm({
                 <p className="text-xs font-medium uppercase tracking-wide text-amber">
                   Send the Birr to
                 </p>
-                <p className="mt-1 text-ink">
-                  <span className="text-ink-muted">Name: </span>
-                  {ad.receiving_name}
-                </p>
-                <p className="text-ink">
-                  <span className="text-ink-muted">
-                    {PAYMENT_METHOD_LABELS[method]}:{" "}
+                <div className="mt-1 flex items-center justify-between gap-2 text-ink">
+                  <span>
+                    <span className="text-ink-muted">Name: </span>
+                    {ad.receiving_name}
                   </span>
-                  <span className="font-amount">{ad.receiving_number}</span>
-                </p>
+                  <CopyButton
+                    value={ad.receiving_name}
+                    ariaLabel="Copy name"
+                  />
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2 text-ink">
+                  <span>
+                    <span className="text-ink-muted">
+                      {PAYMENT_METHOD_LABELS[method]}:{" "}
+                    </span>
+                    <span className="font-amount">{ad.receiving_number}</span>
+                  </span>
+                  <CopyButton
+                    value={ad.receiving_number}
+                    ariaLabel="Copy number"
+                  />
+                </div>
                 {ad.receiving_note && (
                   <p className="mt-1 text-xs text-ink-soft">
                     {ad.receiving_note}
