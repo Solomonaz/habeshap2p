@@ -33,10 +33,12 @@ export type WithdrawalRow = Database["public"]["Tables"]["withdrawals"]["Row"];
  */
 export async function requestWithdrawal(args: {
   userId: string;
+  /** The amount the user wants to SEND (what arrives). The fee is added on top. */
   toAddress: string;
   amount: string;
-}): Promise<string> {
-  if (toMicros(args.amount) <= 0n) {
+}): Promise<{ id: string; needsApproval: boolean }> {
+  const sendMicros = toMicros(args.amount);
+  if (sendMicros <= 0n) {
     throw new Error("withdrawal amount must be positive");
   }
   // Reject malformed destinations up front so funds are never held for a payout
@@ -45,26 +47,32 @@ export async function requestWithdrawal(args: {
   if (!isValidTronAddress(args.toAddress)) {
     throw new Error("enter a valid Tron (TRC-20) address");
   }
-  // The fee is authoritative server-side (never trusted from the client) and is
-  // baked onto the row at request time, so a later admin change doesn't alter an
-  // already-queued withdrawal. Reject amounts that don't clear the fee up front.
+  // Fee-on-top model: the user enters the amount they want to SEND, and the fee
+  // is charged on top — so the full amount reaches the destination and the user
+  // must have (send + fee) in their balance. We hold that GROSS on the row as
+  // `amount_usdt`; withdrawal_mark_sent then broadcasts net = amount − fee = the
+  // exact send amount, and keeps the fee as revenue. So the settlement path is
+  // completely unchanged — only what we put on the row differs. The fee is
+  // authoritative server-side (never trusted from the client) and is baked onto
+  // the row so a later admin change can't alter an already-queued withdrawal.
   const fee = await getWithdrawalFee();
-  if (toMicros(args.amount) <= toMicros(fee)) {
-    throw new Error(
-      `amount must be greater than the ${formatUsdt(fee)} USDT withdrawal fee`,
-    );
-  }
+  const grossMicros = sendMicros + toMicros(fee);
+  const gross = fromMicros(grossMicros);
+  // SQL decides PENDING_APPROVAL from the GROSS vs the threshold — mirror that
+  // here so the admin notification fires on exactly the same withdrawals.
+  const needsApproval =
+    grossMicros >= toMicros(String(WITHDRAWAL_APPROVAL_THRESHOLD));
   const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("withdrawal_request", {
     p_user: args.userId,
     p_to_address: args.toAddress,
-    p_amount: args.amount,
+    p_amount: gross,
     p_threshold: String(WITHDRAWAL_APPROVAL_THRESHOLD),
     p_fee: fee,
   });
   if (error) throw new Error(error.message);
   if (!data) throw new Error("withdrawal_request returned no id");
-  return data;
+  return { id: data, needsApproval };
 }
 
 /** Admin clears a pending withdrawal to send. SQL re-checks is_admin. */

@@ -7,7 +7,6 @@ import { toMicros, formatUsdt } from "@/lib/money";
 import { postBond, releaseBond } from "@/lib/merchant";
 import { requestWithdrawal } from "@/lib/withdrawals";
 import { internalTransfer, lookupUserByPublicId } from "@/lib/transfers";
-import { WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
 import { notifyAdmins, createNotification } from "@/lib/notifications";
 import { isLivePaymentsEnabled } from "@/lib/settings";
 import {
@@ -248,16 +247,22 @@ export async function requestWithdrawalAction(
     return { error: "Enter a valid USDT amount." };
   }
 
+  let needsApproval = false;
   try {
-    await requestWithdrawal({ userId: user.id, toAddress, amount });
+    ({ needsApproval } = await requestWithdrawal({
+      userId: user.id,
+      toAddress,
+      amount,
+    }));
   } catch (e) {
     return {
       error: e instanceof Error ? e.message : "Failed to request withdrawal.",
     };
   }
 
-  // Large withdrawals are held for manual sign-off — alert the admins.
-  if (Number(amount) >= WITHDRAWAL_APPROVAL_THRESHOLD) {
+  // Large withdrawals are held for manual sign-off — alert the admins. The
+  // send + fee (gross) is what crosses the threshold, decided in requestWithdrawal.
+  if (needsApproval) {
     await notifyAdmins({
       type: "withdrawal_pending",
       title: "Withdrawal needs approval",

@@ -29,9 +29,13 @@ export function WithdrawForm({
   );
   const [amount, setAmount] = useState("");
   const feeNum = Number(fee) || 0;
+  const availNum = Number(available) || 0;
+  // The user enters the amount they want to SEND; the fee is charged on top, so
+  // the total taken from their balance is (send + fee).
   const amtNum = Number(amount);
-  const net =
-    Number.isFinite(amtNum) && amtNum > feeNum ? amtNum - feeNum : null;
+  const total =
+    Number.isFinite(amtNum) && amtNum > 0 ? amtNum + feeNum : null;
+  const insufficient = total !== null && total > availNum + 1e-9;
 
   return (
     <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
@@ -41,8 +45,10 @@ export function WithdrawForm({
         <span className="font-amount text-ink-muted">
           {formatUsdt(available)}
         </span>{" "}
-        USDT. A {formatUsdt(fee)} USDT network fee is deducted. Withdrawals of{" "}
-        {approvalThreshold} USDT or more need admin review before they&apos;re sent.
+        USDT. A {formatUsdt(fee)} USDT network fee is added on top — the full
+        amount you enter is sent, and your balance must cover the amount plus the
+        fee. Withdrawals of {approvalThreshold} USDT or more need admin review
+        before they&apos;re sent.
       </p>
 
       {state.error && (
@@ -83,7 +89,7 @@ export function WithdrawForm({
         <div className="flex items-end gap-2">
           <div className="flex-1">
             <label htmlFor="amount" className="block text-xs text-ink-muted">
-              Amount (USDT)
+              Amount to send (USDT)
             </label>
             <input
               id="amount"
@@ -98,7 +104,7 @@ export function WithdrawForm({
           </div>
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || insufficient || amount.trim() === ""}
             className="rounded-md bg-amber px-4 py-2 text-sm font-semibold text-paper hover:bg-amber-soft disabled:opacity-60"
           >
             {pending ? "Requesting…" : "Withdraw"}
@@ -108,18 +114,27 @@ export function WithdrawForm({
         {amount.trim() !== "" && (
           <div className="rounded-md bg-paper-sunken px-3 py-2 text-xs">
             <div className="flex items-center justify-between text-ink-muted">
-              <span>Network fee</span>
-              <span className="font-amount">−{formatUsdt(fee)} USDT</span>
-            </div>
-            <div className="mt-1 flex items-center justify-between font-medium text-ink">
-              <span>You&apos;ll receive</span>
+              <span>Amount sent</span>
               <span className="font-amount">
-                {net !== null ? `${formatUsdt(String(net))} USDT` : "—"}
+                {Number.isFinite(amtNum) && amtNum > 0
+                  ? `${formatUsdt(String(amtNum))} USDT`
+                  : "—"}
               </span>
             </div>
-            {net === null && (
-              <p className="mt-1 text-ink-faint">
-                Amount must be more than the {formatUsdt(fee)} USDT fee.
+            <div className="mt-1 flex items-center justify-between text-ink-muted">
+              <span>Network fee</span>
+              <span className="font-amount">+{formatUsdt(fee)} USDT</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between font-medium text-ink">
+              <span>Total deducted</span>
+              <span className="font-amount">
+                {total !== null ? `${formatUsdt(String(total))} USDT` : "—"}
+              </span>
+            </div>
+            {insufficient && (
+              <p className="mt-1 text-sell">
+                You need {formatUsdt(String(total))} USDT (amount + fee) but only
+                have {formatUsdt(available)} USDT.
               </p>
             )}
           </div>

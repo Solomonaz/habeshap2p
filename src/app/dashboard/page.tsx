@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { formatUsdt } from "@/lib/money";
+import { formatUsdt, toMicros, fromMicros } from "@/lib/money";
 import { reputationTier, tradeLimitUsdt } from "@/lib/reputation";
 import {
   TRON_NETWORK,
@@ -274,19 +274,30 @@ export default async function DashboardPage() {
         <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
           <h2 className="text-sm font-medium text-ink">Withdrawal history</h2>
           <ul className="mt-3 space-y-2">
-            {withdrawals.map((w) => (
+            {withdrawals.map((w) => {
+              // `amount_usdt` is the gross hold (send + fee); the amount actually
+              // sent on-chain is net = amount − fee. Show what was sent.
+              const sent = fromMicros(
+                toMicros(w.amount_usdt) - toMicros(w.fee_usdt),
+              );
+              return (
               <li
                 key={w.id}
                 className="rounded-md border border-paper-border bg-paper px-3 py-2.5"
               >
                 <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
                   <span className="font-amount text-sm text-ink">
-                    {formatUsdt(w.amount_usdt)} USDT
+                    {formatUsdt(sent)} USDT
                   </span>
                   <span className="text-xs text-ink-muted">
                     {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
                   </span>
                 </div>
+                {Number(w.fee_usdt) > 0 && (
+                  <p className="mt-0.5 text-xs text-ink-faint">
+                    + {formatUsdt(w.fee_usdt)} USDT fee
+                  </p>
+                )}
                 {w.status !== "PENDING_APPROVAL" && (
                   <p className="mt-1 break-all font-amount text-xs text-ink-faint">
                     → {w.to_address}
@@ -304,7 +315,8 @@ export default async function DashboardPage() {
                   {new Date(w.created_at).toLocaleString()}
                 </p>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       )}
