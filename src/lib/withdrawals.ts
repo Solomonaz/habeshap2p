@@ -140,6 +140,26 @@ export type WithdrawalProcessResult = {
 };
 
 /**
+ * Turn a raw chain/node error into something a user can read. The important case
+ * is Tron's "Contract validate error : account [X] does not exist": that X is the
+ * SENDER (our hot wallet), not the destination — it means the payout wallet isn't
+ * activated/funded on-chain, an operations problem, never the user's address. We
+ * surface a neutral message and never blame the destination. Anything else passes
+ * through unchanged; the raw text is always logged for operators.
+ */
+export function friendlyWithdrawalFailure(raw: string): string {
+  const r = raw.toLowerCase();
+  if (r.includes("does not exist") || r.includes("account not exist")) {
+    return (
+      "This withdrawal couldn’t be sent because the payout wallet is temporarily " +
+      "unavailable. Your funds have been returned — please try again later or " +
+      "contact support."
+    );
+  }
+  return raw;
+}
+
+/**
  * Signer worker (cron): broadcast every APPROVED withdrawal and advance any SENT
  * ones to CONFIRMED.
  *
@@ -215,8 +235,11 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
     try {
       ({ txHash } = await provider.sendUsdt(w.to_address, netUsdt));
     } catch (e) {
-      const reason = e instanceof Error ? e.message : "broadcast failed";
-      console.error(`[withdrawal-signer] broadcast FAILED ${w.id}: ${reason}`);
+      const raw = e instanceof Error ? e.message : "broadcast failed";
+      console.error(`[withdrawal-signer] broadcast FAILED ${w.id}: ${raw}`);
+      // Store a human, actionable reason for common chain rejections (a raw node
+      // error is meaningless to a user); the true error stays in the log above.
+      const reason = friendlyWithdrawalFailure(raw);
       const { error: fErr } = await supabase.rpc("withdrawal_mark_failed", {
         p_id: w.id,
         p_reason: reason,
@@ -232,6 +255,16 @@ export async function processApprovedWithdrawals(): Promise<WithdrawalProcessRes
         );
       } else {
         failed += 1;
+        // A failed payout must not be silent — tell the user their money is back.
+        await createNotification({
+          userId: w.user_id,
+          type: "withdrawal_failed",
+          title: "Withdrawal failed — funds returned",
+          body:
+            `${formatUsdt(w.amount_usdt)} USDT couldn't be sent on-chain and has ` +
+            `been returned to your available balance.`,
+          href: "/dashboard",
+        });
       }
       continue;
     }
