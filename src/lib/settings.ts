@@ -40,6 +40,8 @@ type SettingsRow = {
   withdrawal_fee_usdt: string | null;
   seller_fee_bps: number | null;
   internal_transfer_fee_usdt: string | null;
+  referral_bps: number | null;
+  referral_max_trades: number | null;
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
 };
@@ -49,7 +51,8 @@ const SETTINGS_COLUMNS =
   "trade_limit_new, trade_limit_active, trade_limit_established, " +
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
   "release_window_minutes, withdrawal_fee_usdt, seller_fee_bps, " +
-  "internal_transfer_fee_usdt, sweep_strategy, pooled_deposit_address";
+  "internal_transfer_fee_usdt, referral_bps, referral_max_trades, " +
+  "sweep_strategy, pooled_deposit_address";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -377,6 +380,54 @@ export async function setSellerFee(adminId: string, bps: number): Promise<void> 
 export async function getInternalTransferFee(): Promise<string> {
   const row = await getSettingsRow();
   return row?.internal_transfer_fee_usdt ?? "0";
+}
+
+/**
+ * The referral reward rate (migration 0050) in basis points — the share of the
+ * platform fee credited to a referrer on their referral's completed trade
+ * (2000 = 20%). FAIL-SAFE: any read error returns 0, so a hiccup can never
+ * over-pay referrers.
+ */
+export async function getReferralBps(): Promise<number> {
+  const row = await getSettingsRow();
+  return row?.referral_bps ?? 0;
+}
+
+/** Set the referral reward rate (bps). Admin-gated in SQL. */
+export async function setReferralBps(
+  adminId: string,
+  bps: number,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_referral_bps", {
+    p_admin: adminId,
+    p_bps: bps,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
+}
+
+/**
+ * How many of a referee's first completed trades earn their referrer a reward
+ * (migration 0051). 0 = unlimited (lifetime). FAIL-SAFE to the default of 10.
+ */
+export async function getReferralMaxTrades(): Promise<number> {
+  const row = await getSettingsRow();
+  return row?.referral_max_trades ?? 10;
+}
+
+/** Set the referral reward window (first N trades; 0 = unlimited). Admin-gated. */
+export async function setReferralMaxTrades(
+  adminId: string,
+  n: number,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_referral_max_trades", {
+    p_admin: adminId,
+    p_n: n,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
 }
 
 /** Set the flat internal-transfer fee. Admin-gated in SQL. */

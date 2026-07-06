@@ -16,6 +16,14 @@ export function SignupForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  // Referral code (?ref=<HabeshaP2P ID>) — captured once on mount and carried
+  // into signup metadata so the trigger can record who referred this user.
+  const [referral] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return (
+      new URLSearchParams(window.location.search).get("ref")?.trim() ?? ""
+    );
+  });
 
   const telegramBotId = publicEnv.NEXT_PUBLIC_TELEGRAM_BOT_ID;
   const supabase = createClient();
@@ -43,8 +51,11 @@ export function SignupForm() {
       password,
       options: {
         // Stored in auth.users.raw_user_meta_data; the signup trigger copies it
-        // into public.users.full_name.
-        data: { full_name: fullName.trim() },
+        // into public.users.full_name and resolves `ref` into referred_by.
+        data: {
+          full_name: fullName.trim(),
+          ...(referral ? { ref: referral } : {}),
+        },
         // Supabase emails a confirmation link to this route; clicking it proves
         // the inbox is real before the account can sign in.
         emailRedirectTo: `${window.location.origin}/auth/confirm`,
@@ -90,6 +101,17 @@ export function SignupForm() {
         Sign up with your email — we&apos;ll send a link to confirm it&apos;s
         real.
       </p>
+
+      {referral && (
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-buy/30 bg-buy-wash px-3 py-2 text-sm text-buy">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+          <span>
+            You were invited by <span className="font-semibold">#{referral}</span>.
+          </span>
+        </div>
+      )}
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div>

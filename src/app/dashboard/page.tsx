@@ -16,13 +16,18 @@ import {
   getSweepStrategy,
   getWithdrawalFee,
   getInternalTransferFee,
+  getReferralBps,
+  getReferralMaxTrades,
 } from "@/lib/settings";
+import { getReferralStats } from "@/lib/referrals";
+import { SITE_URL } from "@/lib/site";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
 import Link from "next/link";
 import { MerchantBond } from "./merchant-bond";
 import { WithdrawForm } from "./withdraw-form";
 import { InternalTransferForm } from "./internal-transfer-form";
+import { ReferralPanel } from "./referral-panel";
 import { PooledDeposit } from "./pooled-deposit";
 import { devFaucet } from "./actions";
 
@@ -79,14 +84,37 @@ export default async function DashboardPage() {
   // (0021), and the sweep strategy (0029). The sweep strategy decides the deposit
   // UX — pooled mode uses one shared address + a unique amount, every other
   // strategy gives the user a stable per-user deposit address.
-  const [livePayments, tradePolicy, sweepStrategy, withdrawalFee, transferFee] =
-    await Promise.all([
-      isLivePaymentsEnabled(),
-      getTradePolicy(),
-      getSweepStrategy(),
-      getWithdrawalFee(),
-      getInternalTransferFee(),
-    ]);
+  const [
+    livePayments,
+    tradePolicy,
+    sweepStrategy,
+    withdrawalFee,
+    transferFee,
+    referralBps,
+    referralMaxTrades,
+    referralStats,
+  ] = await Promise.all([
+    isLivePaymentsEnabled(),
+    getTradePolicy(),
+    getSweepStrategy(),
+    getWithdrawalFee(),
+    getInternalTransferFee(),
+    getReferralBps(),
+    getReferralMaxTrades(),
+    getReferralStats(user.id),
+  ]);
+
+  // bps → percent for the referral panel (2000 → "20").
+  const referralPercent = (() => {
+    const whole = Math.trunc(referralBps / 100);
+    const frac = referralBps % 100;
+    return frac === 0
+      ? String(whole)
+      : `${whole}.${String(frac).padStart(2, "0").replace(/0+$/, "")}`;
+  })();
+  const referralLink = referralStats.code
+    ? `${SITE_URL}/signup?ref=${referralStats.code}`
+    : "";
 
   // Per-user deposit address only applies to non-pooled strategies. In pooled
   // mode there is no per-user address, so we don't derive one.
@@ -261,6 +289,15 @@ export default async function DashboardPage() {
         available={available}
         myPublicId={myPublicId}
         fee={transferFee}
+      />
+
+      <ReferralPanel
+        code={referralStats.code}
+        link={referralLink}
+        referralCount={referralStats.referralCount}
+        totalEarned={referralStats.totalEarned}
+        rewardPercent={referralPercent}
+        rewardWindow={referralMaxTrades}
       />
 
       <WithdrawForm

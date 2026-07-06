@@ -26,6 +26,8 @@ import {
   setWithdrawalFee,
   setSellerFee,
   setInternalTransferFee,
+  setReferralBps,
+  setReferralMaxTrades,
   setSweepStrategy,
   isLivePaymentsEnabled,
   type SweepStrategy,
@@ -872,6 +874,78 @@ export async function setInternalTransferFeeAction(
     action: "transfer_fee_set",
     targetType: "platform_settings",
     detail: `internal transfer fee ${parsed.data.fee} USDT`,
+  });
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+export type ReferralState = { error?: string; ok?: boolean };
+
+const referralSchema = z.object({
+  percent: z
+    .string()
+    .trim()
+    .refine((s) => PERCENT_RE.test(s), "Enter a percentage like 20 or 12.5")
+    .refine((s) => Number(s) >= 0 && Number(s) <= 100, "Rate must be 0–100%"),
+  max_trades: z
+    .string()
+    .trim()
+    .refine((s) => /^\d+$/.test(s), "Enter a whole number of trades")
+    .refine((s) => Number(s) >= 0 && Number(s) <= 100000, "Must be 0–100000"),
+});
+
+/**
+ * Admin sets the referral reward: the rate (share of the platform fee, migration
+ * 0050) and the reward window (a referee's first N trades, migration 0051; 0 =
+ * unlimited). The percentage is converted to basis points with exact integer
+ * math (20% = 2000 bps). Same triple authorization as every other admin action.
+ */
+export async function setReferralBpsAction(
+  _prev: ReferralState,
+  formData: FormData,
+): Promise<ReferralState> {
+  const parsed = referralSchema.safeParse({
+    percent: formData.get("percent") ?? "",
+    max_trades: formData.get("max_trades") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  let bps: number;
+  try {
+    const bpsMicros = toMicros(parsed.data.percent) * 100n;
+    if (bpsMicros % 1_000_000n !== 0n) {
+      return { error: "Rate is too precise (max 0.01% steps)" };
+    }
+    bps = Number(bpsMicros / 1_000_000n);
+  } catch {
+    return { error: "Enter a valid percentage" };
+  }
+  const maxTrades = Number(parsed.data.max_trades);
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" };
+
+  try {
+    await setReferralBps(user.id, bps);
+    await setReferralMaxTrades(user.id, maxTrades);
+  } catch (e) {
+    return {
+      error: e instanceof Error ? e.message : "Could not set the referral reward",
+    };
+  }
+  await recordAdminAction({
+    adminId: user.id,
+    action: "referral_set",
+    targetType: "platform_settings",
+    detail: `referral ${parsed.data.percent}% · first ${
+      maxTrades === 0 ? "∞" : maxTrades
+    } trades`,
   });
   revalidatePath("/admin/settings");
   return { ok: true };

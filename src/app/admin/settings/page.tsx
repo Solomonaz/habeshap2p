@@ -10,6 +10,8 @@ import {
   getWithdrawalFee,
   getSellerFeeBps,
   getInternalTransferFee,
+  getReferralBps,
+  getReferralMaxTrades,
   getSweepStrategy,
   getPooledDepositAddress,
 } from "@/lib/settings";
@@ -22,6 +24,7 @@ import { OrderWindowForm } from "./order-window-form";
 import { ReleaseWindowForm } from "./release-window-form";
 import { WithdrawalFeeForm } from "./withdrawal-fee-form";
 import { TransferFeeForm } from "./transfer-fee-form";
+import { ReferralForm } from "./referral-form";
 import { SweepStrategyForm } from "./sweep-strategy-form";
 import { EnergyStakeForm } from "./energy-stake-form";
 import { SettingsWorkspace, type SettingsSection } from "./settings-workspace";
@@ -75,6 +78,8 @@ export default async function AdminSettingsPage() {
     withdrawalFee,
     sellerFeeBps,
     transferFee,
+    referralBps,
+    referralMaxTrades,
     sweepStrategy,
     pooledAddress,
     hotEnergy,
@@ -88,6 +93,8 @@ export default async function AdminSettingsPage() {
     getWithdrawalFee(),
     getSellerFeeBps(),
     getInternalTransferFee(),
+    getReferralBps(),
+    getReferralMaxTrades(),
     getSweepStrategy(),
     getPooledDepositAddress(),
     fetchHotWalletEnergy(),
@@ -103,6 +110,7 @@ export default async function AdminSettingsPage() {
   };
   const feePercent = bpsToPercent(fee.bps);
   const sellerPercent = bpsToPercent(sellerFeeBps);
+  const referralPercent = bpsToPercent(referralBps);
 
   const sections: SettingsSection[] = [
     {
@@ -124,6 +132,10 @@ export default async function AdminSettingsPage() {
             sellerPercent={sellerPercent}
             min={fee.min}
             max={fee.max}
+          />
+          <ReferralForm
+            percent={referralPercent}
+            maxTrades={referralMaxTrades}
           />
           <div className="grid gap-5 lg:grid-cols-2">
             <WithdrawalFeeForm fee={withdrawalFee} />

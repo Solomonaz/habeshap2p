@@ -31,7 +31,10 @@ export type LedgerType =
   | "FREEZE"
   | "UNFREEZE"
   | "FORFEIT"
-  | "UNFORFEIT";
+  | "UNFORFEIT"
+  | "TRANSFER_OUT"
+  | "TRANSFER_IN"
+  | "REFERRAL";
 export type AccountStatus = "ACTIVE" | "FROZEN" | "BANNED";
 export type PaymentMethod =
   | "TELEBIRR"
@@ -69,6 +72,8 @@ export type Database = {
           id: string;
           // Short shareable account number (migration 0046) for internal transfers.
           public_id: string;
+          // Who referred this user (migration 0050), set once at signup.
+          referred_by: string | null;
           full_name: string | null;
           phone: string | null;
           email: string | null;
@@ -495,6 +500,12 @@ export type Database = {
           // Seller trade fee in bps + flat internal-transfer fee (migration 0049).
           seller_fee_bps: number;
           internal_transfer_fee_usdt: string;
+          // Referral reward rate in bps (migration 0050) — share of the platform
+          // fee credited to a referrer on their referral's trade. The reward
+          // window (migration 0051) caps it to a referee's first N trades
+          // (0 = unlimited).
+          referral_bps: number;
+          referral_max_trades: number;
           // Admin-selectable deposit-gas strategy (migrations 0029 + 0039):
           // 'staking' | 'rental' | 'burn' | 'pooled'. pooled_deposit_address is the
           // shared omnibus address override (null ⇒ use the hot-wallet address).
@@ -742,6 +753,14 @@ export type Database = {
       };
       set_internal_transfer_fee: {
         Args: { p_admin: string; p_fee: string };
+        Returns: undefined;
+      };
+      set_referral_bps: {
+        Args: { p_admin: string; p_bps: number };
+        Returns: undefined;
+      };
+      set_referral_max_trades: {
+        Args: { p_admin: string; p_n: number };
         Returns: undefined;
       };
       internal_transfer: {
