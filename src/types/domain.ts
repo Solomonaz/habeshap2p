@@ -68,6 +68,17 @@ export const PAYMENT_METHODS = [
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+/**
+ * Mobile-wallet rails — these are identified by a PHONE NUMBER. Everything else
+ * in PAYMENT_METHODS is a bank account (identified by an ACCOUNT NUMBER). Used to
+ * adapt the account-entry field label ("Phone number" vs "Bank account number").
+ */
+export const WALLET_METHODS = ["TELEBIRR", "MPESA", "CBE_BIRR"] as const;
+
+export function isWalletMethod(method: string): boolean {
+  return (WALLET_METHODS as readonly string[]).includes(method);
+}
+
 export const DISPUTE_STATUSES = ["OPEN", "UNDER_REVIEW", "RESOLVED"] as const;
 export type DisputeStatus = (typeof DISPUTE_STATUSES)[number];
 

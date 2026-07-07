@@ -3,7 +3,12 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import { AD_SIDES, PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
-import { PAYMENT_METHOD_LABELS, SIDE_LABELS } from "@/lib/labels";
+import {
+  PAYMENT_METHOD_LABELS,
+  SIDE_LABELS,
+  accountNumberLabel,
+  accountNumberPlaceholder,
+} from "@/lib/labels";
 import { formatRate, formatEtb } from "@/lib/format";
 import {
   isNonNegativeDecimal,
@@ -39,10 +44,46 @@ export function AdForm({
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
   const [notes, setNotes] = useState("");
-  // SELL ads receive on a single account, so the method is a single choice.
-  const [sellMethod, setSellMethod] = useState<PaymentMethod>(
-    PAYMENT_METHODS[0],
+  // SELL ads can accept several rails, each with its own receiving account.
+  const [sellMethods, setSellMethods] = useState<PaymentMethod[]>([]);
+  const [accounts, setAccounts] = useState<
+    Record<string, { name: string; number: string; note: string }>
+  >({});
+
+  const toggleSellMethod = (m: PaymentMethod) =>
+    setSellMethods((prev) =>
+      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m],
+    );
+  const setAccountField = (
+    m: string,
+    field: "name" | "number" | "note",
+    v: string,
+  ) =>
+    setAccounts((prev) => ({
+      ...prev,
+      [m]: { name: "", number: "", note: "", ...prev[m], [field]: v },
+    }));
+
+  // Keep methods in the canonical PAYMENT_METHODS order for stable UI + payload.
+  const orderedSellMethods = PAYMENT_METHODS.filter((m) =>
+    sellMethods.includes(m),
   );
+  const receivingAccountsJson = JSON.stringify(
+    orderedSellMethods.map((m) => ({
+      method: m,
+      name: (accounts[m]?.name ?? "").trim(),
+      number: (accounts[m]?.number ?? "").trim(),
+      note: (accounts[m]?.note ?? "").trim(),
+    })),
+  );
+  // Every chosen method needs a name + number before the SELL ad can post.
+  const sellAccountsComplete =
+    orderedSellMethods.length > 0 &&
+    orderedSellMethods.every(
+      (m) =>
+        (accounts[m]?.name ?? "").trim() !== "" &&
+        (accounts[m]?.number ?? "").trim() !== "",
+    );
 
   const showPreview =
     rate !== "" || min !== "" || max !== "" || notes.trim() !== "";
@@ -184,11 +225,11 @@ export function AdForm({
       {side === "SELL" ? (
         <fieldset>
           <legend className="text-sm font-medium text-ink">
-            Pick a payment method
+            Payment methods you accept
           </legend>
           <p className="mt-0.5 text-xs text-ink-faint">
-            The account you&apos;ll receive the Birr on. Only irreversible rails
-            are allowed.
+            Pick every rail you can receive the Birr on, then add the account for
+            each. Only irreversible rails are allowed.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {PAYMENT_METHODS.map((m) => (
@@ -197,11 +238,9 @@ export function AdForm({
                 className="flex cursor-pointer items-center gap-2 rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink-soft has-[:checked]:border-amber has-[:checked]:bg-amber-wash has-[:checked]:text-amber"
               >
                 <input
-                  type="radio"
-                  name="payment_methods"
-                  value={m}
-                  checked={sellMethod === m}
-                  onChange={() => setSellMethod(m)}
+                  type="checkbox"
+                  checked={sellMethods.includes(m)}
+                  onChange={() => toggleSellMethod(m)}
                   className="sr-only"
                 />
                 {PAYMENT_METHOD_LABELS[m]}
@@ -209,42 +248,76 @@ export function AdForm({
             ))}
           </div>
 
-          {/* Receiving details for the chosen method — where the buyer pays. */}
-          <div className="mt-4 rounded-card border border-paper-border bg-paper-sunken p-4">
-            <h3 className="text-sm font-medium text-ink">
-              {PAYMENT_METHOD_LABELS[sellMethod]} receiving details
-            </h3>
-            <label className="mt-3 block">
-              <input
-                type="text"
-                name="receiving_name"
-                autoComplete="off"
-                placeholder="Account holder full name"
-                className="w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
-              />
-              <span className="mt-0.5 block text-xs text-ink-faint">
-                Enter the exact name registered on your{" "}
-                {PAYMENT_METHOD_LABELS[sellMethod]} account.
-              </span>
-            </label>
-            <input
-              type="text"
-              name="receiving_number"
-              autoComplete="off"
-              placeholder="Account number / phone (e.g. 09xxxxxxxx)"
-              className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
-            />
-            <input
-              type="text"
-              name="receiving_note"
-              autoComplete="off"
-              placeholder="Note for buyer (optional)"
-              className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber"
-            />
-            <p className="mt-2 text-xs text-ink-faint">
-              Make sure the name matches the one registered on your account.
+          {/* One receiving-account block per selected method. */}
+          {orderedSellMethods.length === 0 ? (
+            <p className="mt-3 text-xs text-ink-faint">
+              Select at least one method to add its receiving account.
             </p>
-          </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {orderedSellMethods.map((m) => (
+                <div
+                  key={m}
+                  className="rounded-card border border-paper-border bg-paper-sunken p-4"
+                >
+                  <h3 className="text-sm font-medium text-ink">
+                    {PAYMENT_METHOD_LABELS[m]} receiving details
+                  </h3>
+                  <label className="mt-3 block">
+                    <span className="mb-0.5 block text-xs font-medium text-ink-soft">
+                      Account holder name
+                    </span>
+                    <input
+                      type="text"
+                      value={accounts[m]?.name ?? ""}
+                      onChange={(e) =>
+                        setAccountField(m, "name", e.target.value)
+                      }
+                      autoComplete="off"
+                      placeholder="Account holder full name"
+                      className="w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+                    />
+                  </label>
+                  <label className="mt-2 block">
+                    <span className="mb-0.5 block text-xs font-medium text-ink-soft">
+                      {accountNumberLabel(m)}
+                    </span>
+                    <input
+                      type="text"
+                      value={accounts[m]?.number ?? ""}
+                      onChange={(e) =>
+                        setAccountField(m, "number", e.target.value)
+                      }
+                      autoComplete="off"
+                      placeholder={accountNumberPlaceholder(m)}
+                      className="w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    value={accounts[m]?.note ?? ""}
+                    onChange={(e) => setAccountField(m, "note", e.target.value)}
+                    autoComplete="off"
+                    placeholder="Note for buyer (optional)"
+                    className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber"
+                  />
+                </div>
+              ))}
+              <p className="text-xs text-ink-faint">
+                Make sure each name matches the one registered on that account.
+              </p>
+            </div>
+          )}
+
+          {/* Serialised payload for the server action. */}
+          <input
+            type="hidden"
+            name="receiving_accounts"
+            value={receivingAccountsJson}
+          />
+          {orderedSellMethods.map((m) => (
+            <input key={m} type="hidden" name="payment_methods" value={m} />
+          ))}
         </fieldset>
       ) : (
         <fieldset>
@@ -338,7 +411,12 @@ export function AdForm({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          disabled={pending || maxExceedsBalance || sideTaken}
+          disabled={
+            pending ||
+            maxExceedsBalance ||
+            sideTaken ||
+            (side === "SELL" && !sellAccountsComplete)
+          }
           className="rounded-md bg-amber px-5 py-2.5 text-sm font-medium text-paper-raised hover:bg-amber-soft disabled:opacity-60"
         >
           {pending ? "Posting…" : "Post ad"}

@@ -3,7 +3,11 @@
 import { useActionState, useState } from "react";
 import type { AdWithPoster } from "@/lib/ads";
 import type { PaymentMethod } from "@/types/domain";
-import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
+import {
+  PAYMENT_METHOD_LABELS,
+  accountNumberLabel,
+  accountNumberPlaceholder,
+} from "@/lib/labels";
 import { formatEtb, formatRate } from "@/lib/format";
 import { formatTradeLimit } from "@/lib/reputation";
 import { traderName } from "@/lib/handle";
@@ -34,6 +38,14 @@ export function TradeForm({
   const etb = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * rate : 0;
   const minUsdt = rate > 0 ? Number(ad.min_etb) / rate : 0;
   const maxUsdt = rate > 0 ? Number(ad.max_etb) / rate : 0;
+
+  // For a SELL ad, show the receiving account of the method the buyer picked
+  // (migration 0052). Fall back to the legacy single columns for older ads.
+  const chosenAccount =
+    ad.receiving_accounts?.find((a) => a.method === method) ?? null;
+  const recvName = chosenAccount?.name || ad.receiving_name || "";
+  const recvNumber = chosenAccount?.number || ad.receiving_number || "";
+  const recvNote = chosenAccount?.note || ad.receiving_note || "";
 
   // Soft client-side hint; the SQL (order_create) is the authoritative guard.
   const overLimit =
@@ -198,38 +210,31 @@ export function TradeForm({
               </span>
             </label>
 
-            {/* Where the buyer sends the Birr — the seller's receiving account. */}
-            {ad.receiving_name && ad.receiving_number && (
+            {/* Where the buyer sends the Birr — the seller's receiving account
+                for the method the buyer picked above. */}
+            {recvName && recvNumber && (
               <div className="rounded-md border border-amber/40 bg-amber-wash px-3 py-2.5 text-sm">
                 <p className="text-xs font-medium uppercase tracking-wide text-amber">
-                  Send the Birr to
+                  Send the Birr to · {PAYMENT_METHOD_LABELS[method]}
                 </p>
                 <div className="mt-1 flex items-center justify-between gap-2 text-ink">
                   <span>
                     <span className="text-ink-muted">Name: </span>
-                    {ad.receiving_name}
+                    {recvName}
                   </span>
-                  <CopyButton
-                    value={ad.receiving_name}
-                    ariaLabel="Copy name"
-                  />
+                  <CopyButton value={recvName} ariaLabel="Copy name" />
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2 text-ink">
                   <span>
                     <span className="text-ink-muted">
-                      {PAYMENT_METHOD_LABELS[method]}:{" "}
+                      {accountNumberLabel(method)}:{" "}
                     </span>
-                    <span className="font-amount">{ad.receiving_number}</span>
+                    <span className="font-amount">{recvNumber}</span>
                   </span>
-                  <CopyButton
-                    value={ad.receiving_number}
-                    ariaLabel="Copy number"
-                  />
+                  <CopyButton value={recvNumber} ariaLabel="Copy number" />
                 </div>
-                {ad.receiving_note && (
-                  <p className="mt-1 text-xs text-ink-soft">
-                    {ad.receiving_note}
-                  </p>
+                {recvNote && (
+                  <p className="mt-1 text-xs text-ink-soft">{recvNote}</p>
                 )}
                 <p className="mt-1.5 text-xs text-ink-faint">
                   You&apos;ll confirm these details again once the order opens.
@@ -263,13 +268,18 @@ export function TradeForm({
                 placeholder="Account holder full name"
                 className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
               />
-              <input
-                type="text"
-                name="receiving_number"
-                autoComplete="off"
-                placeholder="Account number / phone (e.g. 09xxxxxxxx)"
-                className="mt-2 w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
-              />
+              <label className="mt-2 block">
+                <span className="mb-0.5 block text-xs font-medium text-ink-soft">
+                  {accountNumberLabel(method)}
+                </span>
+                <input
+                  type="text"
+                  name="receiving_number"
+                  autoComplete="off"
+                  placeholder={accountNumberPlaceholder(method)}
+                  className="w-full rounded-md border border-paper-border bg-paper-raised px-3 py-2 font-amount text-ink placeholder:text-ink-faint focus:border-amber"
+                />
+              </label>
               <input
                 type="text"
                 name="receiving_note"

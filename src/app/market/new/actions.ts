@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { AD_SIDES, PAYMENT_METHODS } from "@/types/domain";
+import { AD_SIDES, PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
 import { sellMaxExceedsBalance, maxEtbForBalance } from "@/lib/ad-capacity";
 import { formatEtb } from "@/lib/format";
 
@@ -26,11 +26,6 @@ const createAdSchema = z
     // For BUY ads the advertiser IS the buyer, so we capture the name they will
     // pay from now (rule #2) — it is copied onto each order a seller takes.
     payer_name: z.string().trim().optional(),
-    // For SELL ads the advertiser IS the seller (receives the Birr), so we capture
-    // the account the buyer must pay into — shown to every buyer who takes the ad.
-    receiving_name: z.string().trim().max(120).optional(),
-    receiving_number: z.string().trim().max(60).optional(),
-    receiving_note: z.string().trim().max(200).optional(),
     // Optional free-text note shown to anyone who opens the ad (online hours,
     // payment timing, instructions). Capped to match the DB check (≤ 500).
     notes: z
@@ -46,15 +41,19 @@ const createAdSchema = z
   .refine((v) => v.side !== "BUY" || (v.payer_name?.length ?? 0) > 0, {
     message: "Enter the payment-account name you will pay from",
     path: ["payer_name"],
-  })
-  .refine((v) => v.side !== "SELL" || (v.receiving_name?.length ?? 0) > 0, {
-    message: "Enter the account holder name that receives the Birr",
-    path: ["receiving_name"],
-  })
-  .refine((v) => v.side !== "SELL" || (v.receiving_number?.length ?? 0) > 0, {
-    message: "Enter the account number / phone that receives the Birr",
-    path: ["receiving_number"],
   });
+
+/**
+ * A SELL ad's per-method receiving account (migration 0052). The advertiser (the
+ * USDT-seller) supplies one of these for every rail they accept; the buyer picks
+ * a rail and order_create snapshots the matching account.
+ */
+const receivingAccountSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  name: z.string().trim().min(1, "Account holder name is required").max(120),
+  number: z.string().trim().min(1, "Account number / phone is required").max(60),
+  note: z.string().trim().max(200).optional().default(""),
+});
 
 export type CreateAdState = { error?: string };
 
@@ -69,14 +68,49 @@ export async function createAd(
     max_etb: formData.get("max_etb"),
     payment_methods: formData.getAll("payment_methods"),
     payer_name: formData.get("payer_name") ?? undefined,
-    receiving_name: formData.get("receiving_name") ?? undefined,
-    receiving_number: formData.get("receiving_number") ?? undefined,
-    receiving_note: formData.get("receiving_note") ?? undefined,
     notes: formData.get("notes") ?? undefined,
   });
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+
+  // SELL ads carry a receiving account per method (migration 0052). Parse and
+  // validate the JSON payload the form builds; each accepted method needs a
+  // name + number. The methods here are the source of truth for a SELL ad's
+  // payment_methods.
+  let receivingAccounts:
+    | { method: PaymentMethod; name: string; number: string; note: string }[]
+    | null = null;
+  if (parsed.data.side === "SELL") {
+    let raw: unknown;
+    try {
+      raw = JSON.parse((formData.get("receiving_accounts") ?? "[]").toString());
+    } catch {
+      return { error: "Could not read the receiving accounts — please retry." };
+    }
+    const accts = z.array(receivingAccountSchema).safeParse(raw);
+    if (!accts.success) {
+      return {
+        error: accts.error.issues[0]?.message ?? "Add a valid receiving account",
+      };
+    }
+    if (accts.data.length === 0) {
+      return { error: "Add at least one payment method with its account." };
+    }
+    const seen = new Set<string>();
+    for (const a of accts.data) {
+      if (seen.has(a.method)) {
+        return { error: "Each payment method can only be added once." };
+      }
+      seen.add(a.method);
+    }
+    receivingAccounts = accts.data.map((a) => ({
+      method: a.method,
+      name: a.name,
+      number: a.number,
+      note: a.note ?? "",
+    }));
   }
 
   const supabase = await createServerSupabase();
@@ -135,24 +169,25 @@ export async function createAd(
 
   // Insert AS THE USER. The RLS insert policy requires user_id = auth.uid(),
   // so a forged user_id would be rejected by the database, not just trusted here.
+  const isSell = parsed.data.side === "SELL";
+  // For a SELL ad the accepted methods are exactly those with a receiving
+  // account; the legacy single receiving_* columns mirror the first account so
+  // older read paths keep working alongside receiving_accounts.
+  const first = receivingAccounts?.[0];
   const { error } = await supabase.from("ads").insert({
     user_id: user.id,
     side: parsed.data.side,
     rate_etb: parsed.data.rate_etb,
     min_etb: parsed.data.min_etb,
     max_etb: parsed.data.max_etb,
-    payment_methods: parsed.data.payment_methods,
-    payer_name: parsed.data.side === "BUY" ? parsed.data.payer_name : null,
-    receiving_name:
-      parsed.data.side === "SELL" ? (parsed.data.receiving_name ?? null) : null,
-    receiving_number:
-      parsed.data.side === "SELL"
-        ? (parsed.data.receiving_number ?? null)
-        : null,
-    receiving_note:
-      parsed.data.side === "SELL"
-        ? (parsed.data.receiving_note ? parsed.data.receiving_note : null)
-        : null,
+    payment_methods: isSell
+      ? receivingAccounts!.map((a) => a.method)
+      : parsed.data.payment_methods,
+    payer_name: isSell ? null : parsed.data.payer_name,
+    receiving_accounts: isSell ? receivingAccounts : null,
+    receiving_name: isSell ? (first?.name ?? null) : null,
+    receiving_number: isSell ? (first?.number ?? null) : null,
+    receiving_note: isSell ? (first?.note ? first.note : null) : null,
     notes: parsed.data.notes ? parsed.data.notes : null,
     status: "ACTIVE",
   });

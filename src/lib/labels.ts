@@ -1,4 +1,23 @@
-import type { PaymentMethod, AdSide } from "@/types/domain";
+import {
+  isWalletMethod,
+  type PaymentMethod,
+  type AdSide,
+} from "@/types/domain";
+
+/**
+ * Label for the account-identifier field of a rail: mobile wallets use a phone
+ * number, banks use an account number.
+ */
+export function accountNumberLabel(method: PaymentMethod): string {
+  return isWalletMethod(method) ? "Phone number" : "Bank account number";
+}
+
+/** Placeholder mirroring accountNumberLabel. */
+export function accountNumberPlaceholder(method: PaymentMethod): string {
+  return isWalletMethod(method)
+    ? "Phone number (e.g. 09xxxxxxxx)"
+    : "Bank account number";
+}
 
 /** Human labels for the whitelisted payment rails. */
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {

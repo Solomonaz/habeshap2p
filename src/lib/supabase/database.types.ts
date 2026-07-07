@@ -51,6 +51,13 @@ export type PaymentMethod =
   | "BUNNA"
   | "OROMIA"
   | "COOP_OROMIA";
+/** A SELL ad's per-method receiving account (migration 0052, ads.receiving_accounts). */
+export type ReceivingAccount = {
+  method: PaymentMethod;
+  name: string;
+  number: string;
+  note: string;
+};
 export type DisputeStatus = "OPEN" | "UNDER_REVIEW" | "RESOLVED";
 export type DisputeResolution = "FAVOUR_BUYER" | "FAVOUR_SELLER";
 export type ChainDirection = "IN" | "OUT";
@@ -189,6 +196,8 @@ export type Database = {
           receiving_name: string | null;
           receiving_number: string | null;
           receiving_note: string | null;
+          // Per-method receiving accounts for SELL ads (migration 0052).
+          receiving_accounts: ReceivingAccount[] | null;
           created_at: string;
         };
         Insert: {
@@ -205,6 +214,7 @@ export type Database = {
           receiving_name?: string | null;
           receiving_number?: string | null;
           receiving_note?: string | null;
+          receiving_accounts?: ReceivingAccount[] | null;
           created_at?: string;
         };
         Update: {
