@@ -13,11 +13,12 @@ import { fetchNotifications, type NotificationRow } from "@/lib/notifications";
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
 // Home (the order book at /market) leads the nav; the logo also links there.
+// "Account" is intentionally NOT here — it lives in the profile dropdown (and the
+// mobile drawer) so it isn't duplicated in the top nav.
 const NAV: { href: string; label: string; key: Page }[] = [
   { href: "/market", label: "Home", key: "market" },
   { href: "/orders", label: "Orders", key: "orders" },
   { href: "/market/mine", label: "My ads", key: "mine" },
-  { href: "/dashboard", label: "Account", key: "dashboard" },
 ];
 
 export async function SiteHeader({

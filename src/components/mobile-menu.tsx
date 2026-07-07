@@ -78,7 +78,11 @@ export function MobileMenu({
       >
         <div className="flex items-center justify-between border-b border-paper-border/70 px-4 py-3">
           {account ? (
-            <span className="flex min-w-0 items-center gap-2.5">
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className="flex min-w-0 items-center gap-2.5 rounded-lg -mx-1 px-1 py-0.5 hover:bg-paper-sunken/60"
+            >
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-xs font-bold text-paper">
                 {account.initials}
               </span>
@@ -86,13 +90,11 @@ export function MobileMenu({
                 <span className="block truncate text-sm font-medium text-ink">
                   {account.label}
                 </span>
-                {contact && (
-                  <span className="block truncate text-xs text-ink-faint">
-                    {contact}
-                  </span>
-                )}
+                <span className="block truncate text-xs text-ink-faint">
+                  {contact ?? "View account"}
+                </span>
               </span>
-            </span>
+            </Link>
           ) : (
             <span className="text-sm font-semibold text-ink">Menu</span>
           )}

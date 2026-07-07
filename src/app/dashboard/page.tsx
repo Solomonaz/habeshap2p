@@ -29,7 +29,26 @@ import { WithdrawForm } from "./withdraw-form";
 import { InternalTransferForm } from "./internal-transfer-form";
 import { ReferralPanel } from "./referral-panel";
 import { PooledDeposit } from "./pooled-deposit";
+import { AccountTabs, type AccountTab } from "./account-tabs";
 import { devFaucet } from "./actions";
+
+// Compact tab icons for the account workspace.
+const tIcon = "h-4 w-4";
+const IconOverview = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={tIcon}><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6" /></svg>
+);
+const IconDeposit = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={tIcon}><path d="M12 3v11m0 0l4-4m-4 4l-4-4M4 21h16" /></svg>
+);
+const IconSend = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={tIcon}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
+);
+const IconWithdraw = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={tIcon}><path d="M12 21V10m0 0l4 4m-4-4l-4 4M4 3h16" /></svg>
+);
+const IconRefer = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={tIcon}><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M12 8v13M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7" /><path d="M12 8S9.5 3.5 7 5s0 3 5 3zM12 8s2.5-4.5 5-3 0 3-5 3z" /></svg>
+);
 
 const WITHDRAWAL_STATUS_LABEL: Record<string, string> = {
   PENDING_APPROVAL: "Awaiting admin review",
@@ -130,6 +149,199 @@ export default async function DashboardPage() {
   const tradeLimit = tradeLimitUsdt({ isMerchant, completedTrades }, tradePolicy);
   const kycStatus = profile?.kyc_status ?? "UNVERIFIED";
 
+  const accountTabs: AccountTab[] = [
+    {
+      id: "overview",
+      label: "Overview",
+      icon: IconOverview,
+      content: (
+        <div className="space-y-4">
+          <section className="rounded-card border border-paper-border bg-paper-raised p-5">
+            <h2 className="text-sm font-medium text-ink-muted">Reputation</h2>
+            <dl className="mt-3 grid grid-cols-3 gap-4 text-center">
+              <div>
+                <dt className="text-xs text-ink-faint">Score</dt>
+                <dd className="font-amount text-lg text-ink">
+                  {profile?.reputation_score ?? 0}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-ink-faint">Completed</dt>
+                <dd className="font-amount text-lg text-ink">
+                  {profile?.completed_trades ?? 0}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-ink-faint">Completion</dt>
+                <dd className="font-amount text-lg text-ink">
+                  {profile?.completion_rate ?? 0}%
+                </dd>
+              </div>
+            </dl>
+          </section>
+          <MerchantBond
+            isMerchant={isMerchant}
+            tier={tier}
+            tradeLimit={tradeLimit}
+            bond={bond}
+            available={available}
+            minBond={tradePolicy.minMerchantBond}
+          />
+        </div>
+      ),
+    },
+    {
+      id: "deposit",
+      label: "Deposit",
+      icon: IconDeposit,
+      content: (
+        <div className="space-y-4">
+          {!livePayments && process.env.NODE_ENV !== "production" && (
+            <section className="rounded-card border border-amber/40 bg-amber-wash p-5">
+              <h2 className="text-sm font-medium text-amber">Dev faucet</h2>
+              <p className="mt-1 text-xs text-ink-faint">
+                Mints test USDT so you can trade before the on-chain deposit flow
+                (Phase 7) exists. Never enabled in production.
+              </p>
+              <form action={devFaucet} className="mt-3 flex items-center gap-2">
+                <input
+                  type="text"
+                  name="amount"
+                  defaultValue="1000"
+                  inputMode="decimal"
+                  className="w-32 rounded-md border border-paper-border bg-paper px-3 py-1.5 font-amount text-sm text-ink focus:border-amber focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-amber px-4 py-1.5 text-sm font-semibold text-paper hover:bg-amber-soft"
+                >
+                  Credit USDT
+                </button>
+              </form>
+            </section>
+          )}
+          {sweepStrategy === "pooled" ? (
+            <PooledDeposit
+              networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
+              minConfirmations={DEPOSIT_MIN_CONFIRMATIONS}
+            />
+          ) : (
+            <section className="rounded-card border border-paper-border bg-paper-raised p-5">
+              <h2 className="text-sm font-medium text-ink">Deposit USDT</h2>
+              <p className="mt-1 text-xs text-ink-faint">
+                Send TRC-20 USDT to this address. It&apos;s credited after{" "}
+                {DEPOSIT_MIN_CONFIRMATIONS} confirmations.
+              </p>
+              <p className="mt-3 break-all rounded-md bg-paper-sunken px-3 py-2 font-amount text-sm text-ink">
+                {depositAddress}
+              </p>
+              <p className="mt-2 text-xs text-amber">
+                Only send USDT on {TRON_NETWORK_LABEL[TRON_NETWORK]}. Funds sent on
+                any other network or token are unrecoverable.
+              </p>
+            </section>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "send",
+      label: "Send",
+      icon: IconSend,
+      content: (
+        <InternalTransferForm
+          available={available}
+          myPublicId={myPublicId}
+          fee={transferFee}
+        />
+      ),
+    },
+    {
+      id: "withdraw",
+      label: "Withdraw",
+      icon: IconWithdraw,
+      content: (
+        <div className="space-y-4">
+          <WithdrawForm
+            available={available}
+            networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
+            approvalThreshold={WITHDRAWAL_APPROVAL_THRESHOLD}
+            fee={withdrawalFee}
+          />
+          {withdrawals.length > 0 && (
+            <section className="rounded-card border border-paper-border bg-paper-raised p-5">
+              <h2 className="text-sm font-medium text-ink">Withdrawal history</h2>
+              <ul className="mt-3 space-y-2">
+                {withdrawals.map((w) => {
+                  const sent = fromMicros(
+                    toMicros(w.amount_usdt) - toMicros(w.fee_usdt),
+                  );
+                  return (
+                    <li
+                      key={w.id}
+                      className="rounded-md border border-paper-border bg-paper px-3 py-2.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                        <span className="font-amount text-sm text-ink">
+                          {formatUsdt(sent)} USDT
+                        </span>
+                        <span className="text-xs text-ink-muted">
+                          {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
+                        </span>
+                      </div>
+                      {Number(w.fee_usdt) > 0 && (
+                        <p className="mt-0.5 text-xs text-ink-faint">
+                          + {formatUsdt(w.fee_usdt)} USDT fee
+                        </p>
+                      )}
+                      {w.status !== "PENDING_APPROVAL" && (
+                        <p className="mt-1 break-all font-amount text-xs text-ink-faint">
+                          → {w.to_address}
+                        </p>
+                      )}
+                      {w.tx_hash && (
+                        <p className="break-all font-amount text-xs text-ink-faint">
+                          tx {w.tx_hash}
+                        </p>
+                      )}
+                      {w.failure_reason && (
+                        <p className="mt-1 text-xs text-sell">
+                          {w.failure_reason}
+                        </p>
+                      )}
+                      <p className="mt-1 text-xs text-ink-faint">
+                        {new Date(w.created_at).toLocaleString()}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+        </div>
+      ),
+    },
+    ...(referralStats.code && referralPercent !== "0"
+      ? [
+          {
+            id: "refer",
+            label: "Refer & earn",
+            icon: IconRefer,
+            content: (
+              <ReferralPanel
+                code={referralStats.code}
+                link={referralLink}
+                referralCount={referralStats.referralCount}
+                totalEarned={referralStats.totalEarned}
+                rewardPercent={referralPercent}
+                rewardWindow={referralMaxTrades}
+              />
+            ),
+          } satisfies AccountTab,
+        ]
+      : []),
+  ];
+
   return (
     <>
       <SiteHeader account={accountLabel(user)} active="dashboard" userId={user.id} />
@@ -205,158 +417,7 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
-        <h2 className="text-sm font-medium text-ink-muted">Reputation</h2>
-        <dl className="mt-3 grid grid-cols-3 gap-4 text-center">
-          <div>
-            <dt className="text-xs text-ink-faint">Score</dt>
-            <dd className="font-amount text-lg text-ink">
-              {profile?.reputation_score ?? 0}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ink-faint">Completed</dt>
-            <dd className="font-amount text-lg text-ink">
-              {profile?.completed_trades ?? 0}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ink-faint">Completion</dt>
-            <dd className="font-amount text-lg text-ink">
-              {profile?.completion_rate ?? 0}%
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <MerchantBond
-        isMerchant={isMerchant}
-        tier={tier}
-        tradeLimit={tradeLimit}
-        bond={bond}
-        available={available}
-        minBond={tradePolicy.minMerchantBond}
-      />
-
-      {!livePayments && process.env.NODE_ENV !== "production" && (
-        <section className="mt-4 rounded-card border border-amber/40 bg-amber-wash p-5">
-          <h2 className="text-sm font-medium text-amber">Dev faucet</h2>
-          <p className="mt-1 text-xs text-ink-faint">
-            Mints test USDT so you can trade before the on-chain deposit flow
-            (Phase 7) exists. Never enabled in production.
-          </p>
-          <form action={devFaucet} className="mt-3 flex items-center gap-2">
-            <input
-              type="text"
-              name="amount"
-              defaultValue="1000"
-              inputMode="decimal"
-              className="w-32 rounded-md border border-paper-border bg-paper px-3 py-1.5 font-amount text-sm text-ink focus:border-amber focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-amber px-4 py-1.5 text-sm font-semibold text-paper hover:bg-amber-soft"
-            >
-              Credit USDT
-            </button>
-          </form>
-        </section>
-      )}
-
-      {sweepStrategy === "pooled" ? (
-        <PooledDeposit
-          networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
-          minConfirmations={DEPOSIT_MIN_CONFIRMATIONS}
-        />
-      ) : (
-        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
-          <h2 className="text-sm font-medium text-ink">Deposit USDT</h2>
-          <p className="mt-1 text-xs text-ink-faint">
-            Send TRC-20 USDT to this address. It&apos;s credited after{" "}
-            {DEPOSIT_MIN_CONFIRMATIONS} confirmations.
-          </p>
-          <p className="mt-3 break-all rounded-md bg-paper-sunken px-3 py-2 font-amount text-sm text-ink">
-            {depositAddress}
-          </p>
-          <p className="mt-2 text-xs text-amber">
-            Only send USDT on {TRON_NETWORK_LABEL[TRON_NETWORK]}. Funds sent on any
-            other network or token are unrecoverable.
-          </p>
-        </section>
-      )}
-
-      <InternalTransferForm
-        available={available}
-        myPublicId={myPublicId}
-        fee={transferFee}
-      />
-
-      <ReferralPanel
-        code={referralStats.code}
-        link={referralLink}
-        referralCount={referralStats.referralCount}
-        totalEarned={referralStats.totalEarned}
-        rewardPercent={referralPercent}
-        rewardWindow={referralMaxTrades}
-      />
-
-      <WithdrawForm
-        available={available}
-        networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
-        approvalThreshold={WITHDRAWAL_APPROVAL_THRESHOLD}
-        fee={withdrawalFee}
-      />
-
-      {withdrawals.length > 0 && (
-        <section className="mt-4 rounded-card border border-paper-border bg-paper-raised p-5">
-          <h2 className="text-sm font-medium text-ink">Withdrawal history</h2>
-          <ul className="mt-3 space-y-2">
-            {withdrawals.map((w) => {
-              // `amount_usdt` is the gross hold (send + fee); the amount actually
-              // sent on-chain is net = amount − fee. Show what was sent.
-              const sent = fromMicros(
-                toMicros(w.amount_usdt) - toMicros(w.fee_usdt),
-              );
-              return (
-              <li
-                key={w.id}
-                className="rounded-md border border-paper-border bg-paper px-3 py-2.5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-                  <span className="font-amount text-sm text-ink">
-                    {formatUsdt(sent)} USDT
-                  </span>
-                  <span className="text-xs text-ink-muted">
-                    {WITHDRAWAL_STATUS_LABEL[w.status] ?? w.status}
-                  </span>
-                </div>
-                {Number(w.fee_usdt) > 0 && (
-                  <p className="mt-0.5 text-xs text-ink-faint">
-                    + {formatUsdt(w.fee_usdt)} USDT fee
-                  </p>
-                )}
-                {w.status !== "PENDING_APPROVAL" && (
-                  <p className="mt-1 break-all font-amount text-xs text-ink-faint">
-                    → {w.to_address}
-                  </p>
-                )}
-                {w.tx_hash && (
-                  <p className="break-all font-amount text-xs text-ink-faint">
-                    tx {w.tx_hash}
-                  </p>
-                )}
-                {w.failure_reason && (
-                  <p className="mt-1 text-xs text-sell">{w.failure_reason}</p>
-                )}
-                <p className="mt-1 text-xs text-ink-faint">
-                  {new Date(w.created_at).toLocaleString()}
-                </p>
-              </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
+      <AccountTabs tabs={accountTabs} />
       </main>
     </>
   );
