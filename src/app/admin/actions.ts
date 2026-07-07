@@ -8,7 +8,14 @@ import { isAdmin } from "@/lib/admin";
 import { createNotification } from "@/lib/notifications";
 import { formatUsdt } from "@/lib/money";
 import { resolveDispute } from "@/lib/disputes";
-import { reinstateAccount } from "@/lib/accounts";
+import {
+  reinstateAccount,
+  searchAccounts,
+  banAccount,
+  unbanAccount,
+  type AccountSearchResult,
+} from "@/lib/accounts";
+import { createClient } from "@supabase/supabase-js";
 import {
   approveWithdrawal,
   rejectWithdrawal,
@@ -1311,4 +1318,96 @@ export async function rejectKycAction(
 
   revalidatePath("/admin/kyc");
   return {};
+}
+
+// ── Admin account moderation (migration 0053): search + ban + unban ──────────
+
+/**
+ * Re-verify the acting admin's own password before a destructive ban. Uses a
+ * throwaway anon client so it never touches the live session; a wrong password
+ * makes signInWithPassword error and we refuse the ban.
+ */
+async function verifyAdminPassword(
+  email: string,
+  password: string,
+): Promise<boolean> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key || !email || !password) return false;
+  const client = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { error } = await client.auth.signInWithPassword({ email, password });
+  return !error;
+}
+
+async function requireAdmin() {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" as const };
+  return { user };
+}
+
+export async function searchAccountsAction(
+  query: string,
+): Promise<{ results?: AccountSearchResult[]; error?: string }> {
+  const gate = await requireAdmin();
+  if ("error" in gate) return { error: gate.error };
+  try {
+    return { results: await searchAccounts(query) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Search failed" };
+  }
+}
+
+export async function banAccountAction(
+  userId: string,
+  password: string,
+  reason: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  const gate = await requireAdmin();
+  if ("error" in gate) return { error: gate.error };
+  const { user } = gate;
+
+  if (!(await verifyAdminPassword(user.email ?? "", password))) {
+    return { error: "Incorrect password — ban not applied." };
+  }
+  try {
+    await banAccount(user.id, userId, reason);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not ban the account" };
+  }
+  await recordAdminAction({
+    adminId: user.id,
+    action: "account_banned",
+    targetType: "user",
+    targetId: userId,
+    detail: reason?.trim() ? `reason: ${reason.trim()}` : "no reason given",
+  });
+  revalidatePath("/admin/accounts");
+  return { ok: true };
+}
+
+export async function unbanAccountAction(
+  userId: string,
+): Promise<{ ok?: boolean; error?: string }> {
+  const gate = await requireAdmin();
+  if ("error" in gate) return { error: gate.error };
+  const { user } = gate;
+  try {
+    await unbanAccount(user.id, userId);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not unban the account" };
+  }
+  await recordAdminAction({
+    adminId: user.id,
+    action: "account_unbanned",
+    targetType: "user",
+    targetId: userId,
+  });
+  revalidatePath("/admin/accounts");
+  return { ok: true };
 }

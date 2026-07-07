@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import type { AccountStatus } from "@/lib/supabase/database.types";
+import { toMicros, fromMicros } from "@/lib/money";
 
 /**
  * Account-standing reads + the reinstatement (appeal) action, layered over the
@@ -8,6 +9,113 @@ import type { AccountStatus } from "@/lib/supabase/database.types";
  * these go through the service-role client and MUST only be called from routes
  * already guarded by an is_admin check — the SQL re-verifies is_admin anyway.
  */
+
+/** A search hit in admin account management. */
+export type AccountSearchResult = {
+  userId: string;
+  fullName: string | null;
+  email: string | null;
+  publicId: string | null;
+  accountStatus: AccountStatus;
+  banReason: string | null;
+  isAdmin: boolean;
+  forfeitedUsdt: string;
+};
+
+/**
+ * Find accounts by email, name, or HabeshaP2P ID (public_id / UID) for the admin
+ * moderation tools. Service-role read; caller must be an admin. Empty query
+ * returns nothing (no dumping the whole user table).
+ */
+export async function searchAccounts(
+  query: string,
+): Promise<AccountSearchResult[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const admin = createAdminSupabase();
+  // Match email/name (case-insensitive substring) or an exact public_id/UUID.
+  const like = `%${q.replace(/[%_]/g, "")}%`;
+  const ors = [`email.ilike.${like}`, `full_name.ilike.${like}`, `public_id.eq.${q}`];
+  if (/^[0-9a-f-]{36}$/i.test(q)) ors.push(`id.eq.${q}`);
+  const { data, error } = await admin
+    .from("users")
+    .select("id, full_name, email, public_id, account_status, ban_reason, is_admin")
+    .or(ors.join(","))
+    .limit(20);
+  if (error) throw new Error(`account search failed: ${error.message}`);
+  const rows = (data ?? []) as {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    public_id: string | null;
+    account_status: AccountStatus;
+    ban_reason: string | null;
+    is_admin: boolean;
+  }[];
+  if (rows.length === 0) return [];
+
+  // Per-user forfeiture is recorded in the ledger (FORFEIT − UNFORFEIT), not a
+  // wallet column — same source fetchModeratedAccounts uses. Lets the UI steer
+  // forfeit-bans to Reinstate (which returns the funds) rather than plain unban.
+  const { data: ledger } = await admin
+    .from("ledger_entries")
+    .select("user_id, type, amount_usdt::text")
+    .in("user_id", rows.map((r) => r.id))
+    .in("type", ["FORFEIT", "UNFORFEIT"]);
+  const forfeitMicros = new Map<string, bigint>();
+  for (const l of (ledger ?? []) as {
+    user_id: string;
+    type: string;
+    amount_usdt: string;
+  }[]) {
+    const cur = forfeitMicros.get(l.user_id) ?? 0n;
+    const d = toMicros(l.amount_usdt);
+    forfeitMicros.set(l.user_id, l.type === "FORFEIT" ? cur + d : cur - d);
+  }
+
+  return rows.map((r) => ({
+    userId: r.id,
+    fullName: r.full_name,
+    email: r.email,
+    publicId: r.public_id,
+    accountStatus: r.account_status,
+    banReason: r.ban_reason,
+    isAdmin: r.is_admin === true,
+    forfeitedUsdt: fromMicros(
+      (forfeitMicros.get(r.id) ?? 0n) > 0n
+        ? forfeitMicros.get(r.id)!
+        : 0n,
+    ),
+  }));
+}
+
+/** Admin bans an account (freezes funds + hides it). SQL re-checks is_admin. */
+export async function banAccount(
+  adminId: string,
+  userId: string,
+  reason: string,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("account_ban", {
+    p_admin: adminId,
+    p_user: userId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Admin lifts a ban, restoring the account to ACTIVE. SQL re-checks is_admin. */
+export async function unbanAccount(
+  adminId: string,
+  userId: string,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("account_unban", {
+    p_admin: adminId,
+    p_user: userId,
+  });
+  if (error) throw new Error(error.message);
+}
 
 export type ModeratedAccount = {
   userId: string;

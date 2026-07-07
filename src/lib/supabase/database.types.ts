@@ -150,6 +150,8 @@ export type Database = {
           usdt_bond: string;
           usdt_withdraw_locked: string;
           usdt_frozen: string;
+          // Forfeited on a missed-release ruling (migration 0025).
+          usdt_forfeited: string;
           deposit_address: string | null;
           created_at: string;
           updated_at: string;
@@ -822,6 +824,14 @@ export type Database = {
       account_reinstate: {
         Args: { p_user: string; p_admin: string };
         Returns: string; // USDT amount returned to the seller (decimal string)
+      };
+      account_ban: {
+        Args: { p_admin: string; p_user: string; p_reason: string };
+        Returns: undefined;
+      };
+      account_unban: {
+        Args: { p_admin: string; p_user: string };
+        Returns: undefined;
       };
       // ── dispute resolution (migration 0010) ──
       order_open_dispute: {

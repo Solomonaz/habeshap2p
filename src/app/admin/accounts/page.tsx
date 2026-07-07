@@ -5,6 +5,7 @@ import { isAdmin } from "@/lib/admin";
 import { fetchModeratedAccounts } from "@/lib/accounts";
 import { traderHandle } from "@/lib/handle";
 import { ReinstateAccount } from "./reinstate";
+import { AccountManager } from "./account-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -23,13 +24,25 @@ export default async function AdminAccountsPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
         <h1 className="text-2xl font-bold tracking-tight text-ink">
-          Moderated accounts
+          Accounts
         </h1>
         <p className="mt-1 text-sm text-ink-muted">
-          Sellers frozen for missing a release window, and accounts permanently
-          banned. Open the case to review the chat and proof. A banned account can
-          be reinstated on appeal — that returns the forfeited funds and lets them
-          trade again.
+          Search and moderate any account, and review sellers frozen for missing
+          a release window.
+        </p>
+
+        <div className="mt-6">
+          <AccountManager />
+        </div>
+
+        <h2 className="mt-10 text-lg font-semibold text-ink">
+          Moderated accounts
+        </h2>
+        <p className="mt-1 text-sm text-ink-muted">
+          Sellers frozen for missing a release window, and accounts banned via the
+          forfeit flow. Open the case to review the chat and proof. A banned account
+          can be reinstated on appeal — that returns the forfeited funds and lets
+          them trade again.
         </p>
 
         <Section

@@ -42,7 +42,12 @@ export async function fetchActiveAds(
   if (pErr) throw new Error(`failed to load profiles: ${pErr.message}`);
 
   const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
-  return ads.map((ad) => ({ ...ad, poster: byId.get(ad.user_id) ?? null }));
+  // public_profiles only exposes ACTIVE accounts (migration 0053), so a poster
+  // with no profile is banned/frozen — drop their ads from the public order book
+  // (the rows are preserved and reappear the moment the account is unbanned).
+  return ads
+    .filter((ad) => byId.has(ad.user_id))
+    .map((ad) => ({ ...ad, poster: byId.get(ad.user_id) ?? null }));
 }
 
 /** Loads a single ad by id with its poster's public reputation (or null). */
