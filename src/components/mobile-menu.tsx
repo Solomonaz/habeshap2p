@@ -25,10 +25,13 @@ export function MobileMenu({
   nav,
   active,
   account,
+  contact,
 }: {
   nav: NavItem[];
   active?: string;
   account?: AccountIdentity | null;
+  /** Email or @telegram-username, shown under the name in the drawer header. */
+  contact?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -75,12 +78,19 @@ export function MobileMenu({
       >
         <div className="flex items-center justify-between border-b border-paper-border/70 px-4 py-3">
           {account ? (
-            <span className="flex min-w-0 items-center gap-2">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-xs font-bold text-paper">
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-xs font-bold text-paper">
                 {account.initials}
               </span>
-              <span className="min-w-0 truncate text-sm text-ink-soft">
-                {account.label}
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-ink">
+                  {account.label}
+                </span>
+                {contact && (
+                  <span className="block truncate text-xs text-ink-faint">
+                    {contact}
+                  </span>
+                )}
               </span>
             </span>
           ) : (

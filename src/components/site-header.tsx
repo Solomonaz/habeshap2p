@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { signOut } from "@/app/actions";
 import { Logo } from "@/components/logo";
 import { MobileMenu } from "@/components/mobile-menu";
+import { ProfileMenu } from "@/components/profile-menu";
 import { OrderNotifications } from "@/components/order-notifications";
 import { PresenceHeartbeat } from "@/components/presence-heartbeat";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -37,13 +37,14 @@ export async function SiteHeader({
   // there we only need the name. `account` (email/handle) stays the fallback.
   let showAdmin = isAdmin ?? false;
   let display = account;
+  let contact: string | null = null;
   let notifications: NotificationRow[] = [];
   if (userId) {
     const supabase = await createServerSupabase();
     const [{ data }, notes] = await Promise.all([
       supabase
         .from("users")
-        .select("full_name, is_admin")
+        .select("full_name, is_admin, email, telegram_username")
         .eq("id", userId)
         .maybeSingle(),
       fetchNotifications(supabase, userId),
@@ -53,6 +54,12 @@ export async function SiteHeader({
     if (name) {
       display = { label: name, initials: initialsFromName(name) };
     }
+    // How the account signed in: Telegram username wins; otherwise the real
+    // email (Telegram accounts carry a synthetic tg…@telegram.local we hide).
+    const tg = data?.telegram_username?.trim();
+    const email = data?.email?.trim();
+    if (tg) contact = `@${tg}`;
+    else if (email && !email.endsWith("@telegram.local")) contact = email;
     notifications = notes;
   }
 
@@ -110,25 +117,24 @@ export async function SiteHeader({
           {userId && (
             <NotificationBell userId={userId} initial={notifications} />
           )}
+          {/* Desktop: the profile chip opens a dropdown with the account info,
+              quick links, and sign out (no more standalone sign-out button). */}
           {display && (
-            <span className="hidden items-center gap-2 rounded-full border border-paper-border bg-paper-sunken/60 py-1 pl-1 pr-3 sm:inline-flex">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper">
-                {display.initials}
-              </span>
-              <span className="max-w-[12rem] truncate text-xs text-ink-soft">
-                {display.label}
-              </span>
-            </span>
+            <ProfileMenu
+              name={display.label}
+              initials={display.initials}
+              contact={contact}
+              isAdmin={showAdmin}
+            />
           )}
-          {/* Desktop: standalone sign-out. Mobile: folded into the menu below. */}
-          <form action={signOut} className="hidden md:block">
-            <button type="submit" className="btn-ghost px-3 py-1.5">
-              Sign out
-            </button>
-          </form>
 
-          {/* Mobile: hamburger holds the nav links + sign out. */}
-          <MobileMenu nav={nav} active={active} account={display} />
+          {/* Mobile: hamburger holds the nav links, account info + sign out. */}
+          <MobileMenu
+            nav={nav}
+            active={active}
+            account={display}
+            contact={contact}
+          />
         </div>
       </div>
     </header>
