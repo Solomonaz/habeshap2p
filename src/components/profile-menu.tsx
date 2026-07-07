@@ -5,22 +5,26 @@ import Link from "next/link";
 import { signOut } from "@/app/actions";
 
 /**
- * The signed-in account chip, upgraded to a click-to-open dropdown. Consolidates
- * what used to be a static name pill + a separate "Sign out" button into one
- * menu that also shows how the user is signed in (email or @telegram) and quick
- * links. Closes on outside-click or Escape. Desktop only (sm+); mobile uses the
- * drawer in MobileMenu.
+ * The signed-in account chip, a click-to-open dropdown that works on every
+ * viewport: on mobile it's the whole account menu (the app uses a bottom tab bar
+ * for navigation instead of a drawer). Shows how the user is signed in (email or
+ * @telegram), their UID, quick links, and sign out. Closes on outside-click or
+ * Escape. On mobile the trigger is just the avatar; the name/chevron appear at
+ * sm+.
  */
 export function ProfileMenu({
   name,
   initials,
   contact,
+  uid,
   isAdmin,
 }: {
   name: string;
   initials: string;
   /** Email address, or @telegram-username for Telegram sign-ins. */
   contact: string | null;
+  /** HabeshaP2P ID (public_id) shown in the menu header. */
+  uid?: string | null;
   isAdmin?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,23 +50,24 @@ export function ProfileMenu({
     "flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-ink-soft transition-colors hover:bg-paper-sunken/70 hover:text-ink";
 
   return (
-    <div ref={ref} className="relative hidden sm:block">
+    <div ref={ref} className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
         className={
-          "flex items-center gap-2 rounded-full border py-1 pl-1 pr-2 transition-colors " +
+          "flex items-center gap-2 rounded-full border p-1 transition-colors sm:pr-2 " +
           (open
             ? "border-amber/50 bg-amber-wash"
             : "border-paper-border bg-paper-sunken/60 hover:border-ink/25")
         }
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper sm:h-6 sm:w-6">
           {initials}
         </span>
-        <span className="max-w-[10rem] truncate text-xs text-ink-soft">
+        {/* Name + chevron only on wider screens; mobile shows just the avatar. */}
+        <span className="hidden max-w-[10rem] truncate text-xs text-ink-soft sm:block">
           {name}
         </span>
         <svg
@@ -72,7 +77,7 @@ export function ProfileMenu({
           fill="none"
           aria-hidden
           className={
-            "shrink-0 text-ink-faint transition-transform " +
+            "hidden shrink-0 text-ink-faint transition-transform sm:block " +
             (open ? "rotate-180" : "")
           }
         >
@@ -100,6 +105,11 @@ export function ProfileMenu({
               <p className="truncate text-sm font-semibold text-ink">{name}</p>
               {contact && (
                 <p className="truncate text-xs text-ink-faint">{contact}</p>
+              )}
+              {uid && (
+                <p className="truncate font-amount text-xs text-ink-faint">
+                  UID {uid}
+                </p>
               )}
             </div>
           </div>

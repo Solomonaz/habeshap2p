@@ -75,7 +75,11 @@ export default function RootLayout({
       {/* suppressHydrationWarning: browser extensions (Grammarly, etc.) inject
           attributes like data-gr-ext-installed onto <body> after SSR, which
           otherwise trips React's hydration check. Scoped to this one element. */}
-      <body className="min-h-screen" suppressHydrationWarning>
+      {/* pb on mobile clears the fixed bottom tab bar (app-shell); none at md+. */}
+      <body
+        className="min-h-screen pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
-import { MobileMenu } from "@/components/mobile-menu";
 import { ProfileMenu } from "@/components/profile-menu";
+import { BottomNav, PostAdFab } from "@/components/bottom-nav";
 import { OrderNotifications } from "@/components/order-notifications";
 import { PresenceHeartbeat } from "@/components/presence-heartbeat";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -39,13 +39,14 @@ export async function SiteHeader({
   let showAdmin = isAdmin ?? false;
   let display = account;
   let contact: string | null = null;
+  let uid: string | null = null;
   let notifications: NotificationRow[] = [];
   if (userId) {
     const supabase = await createServerSupabase();
     const [{ data }, notes] = await Promise.all([
       supabase
         .from("users")
-        .select("full_name, is_admin, email, telegram_username")
+        .select("full_name, is_admin, email, telegram_username, public_id")
         .eq("id", userId)
         .maybeSingle(),
       fetchNotifications(supabase, userId),
@@ -61,6 +62,7 @@ export async function SiteHeader({
     const email = data?.email?.trim();
     if (tg) contact = `@${tg}`;
     else if (email && !email.endsWith("@telegram.local")) contact = email;
+    uid = data?.public_id ?? null;
     notifications = notes;
   }
 
@@ -69,6 +71,7 @@ export async function SiteHeader({
     : NAV;
 
   return (
+    <>
     <header className="sticky top-0 z-40 border-b border-paper-border/70 bg-paper/80 backdrop-blur-xl">
       {userId && <OrderNotifications userId={userId} />}
       {userId && <PresenceHeartbeat />}
@@ -125,19 +128,17 @@ export async function SiteHeader({
               name={display.label}
               initials={display.initials}
               contact={contact}
+              uid={uid}
               isAdmin={showAdmin}
             />
           )}
-
-          {/* Mobile: hamburger holds the nav links, account info + sign out. */}
-          <MobileMenu
-            nav={nav}
-            active={active}
-            account={display}
-            contact={contact}
-          />
         </div>
       </div>
     </header>
+
+    {/* Mobile app-shell: bottom tab bar + floating post button (md-). */}
+    {userId && <BottomNav active={active} />}
+    {userId && <PostAdFab />}
+    </>
   );
 }
