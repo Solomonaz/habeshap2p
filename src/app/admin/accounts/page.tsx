@@ -2,14 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
-import { fetchModeratedAccounts } from "@/lib/accounts";
+import {
+  fetchModeratedAccounts,
+  fetchAccountsPage,
+  ACCOUNTS_PAGE_SIZE,
+} from "@/lib/accounts";
 import { traderHandle } from "@/lib/handle";
 import { ReinstateAccount } from "./reinstate";
-import { AccountManager } from "./account-manager";
+import { AccountsTable } from "./accounts-table";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminAccountsPage() {
+export default async function AdminAccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; q?: string }>;
+}) {
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -17,45 +25,127 @@ export default async function AdminAccountsPage() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) redirect("/market");
 
-  const accounts = await fetchModeratedAccounts();
-  const frozen = accounts.filter((a) => a.accountStatus === "FROZEN");
-  const banned = accounts.filter((a) => a.accountStatus === "BANNED");
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim();
+  const page = Math.max(1, Number(sp.page) || 1);
+
+  const [{ rows, total, pageSize }, moderated] = await Promise.all([
+    fetchAccountsPage({ page, query }),
+    fetchModeratedAccounts(),
+  ]);
+  const frozen = moderated.filter((a) => a.accountStatus === "FROZEN");
+  const banned = moderated.filter((a) => a.accountStatus === "BANNED");
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const qs = (p: number) =>
+    `?page=${p}${query ? `&q=${encodeURIComponent(query)}` : ""}`;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-        <h1 className="text-2xl font-bold tracking-tight text-ink">
-          Accounts
-        </h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          Search and moderate any account, and review sellers frozen for missing
-          a release window.
-        </p>
+    <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
+      <h1 className="text-2xl font-bold tracking-tight text-ink">Accounts</h1>
+      <p className="mt-1 text-sm text-ink-muted">
+        Every account. Ban to freeze funds and hide the account from other users
+        (nothing is deleted); unban to restore it.
+      </p>
 
-        <div className="mt-6">
-          <AccountManager />
+      {/* Optional filter — the table shows everyone by default. */}
+      <form method="get" className="mt-6 flex items-center gap-2">
+        <input
+          type="text"
+          name="q"
+          defaultValue={query}
+          placeholder="Filter by email, name, or UID"
+          className="w-full max-w-sm rounded-md border border-paper-border bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-amber focus:outline-none"
+        />
+        <button
+          type="submit"
+          className="shrink-0 rounded-md bg-ink px-4 py-2 text-sm font-semibold text-paper hover:opacity-90"
+        >
+          Filter
+        </button>
+        {query && (
+          <Link
+            href="?page=1"
+            className="text-sm text-ink-muted underline hover:text-ink"
+          >
+            Clear
+          </Link>
+        )}
+      </form>
+
+      <div className="mt-4">
+        <AccountsTable rows={rows} />
+      </div>
+
+      {/* Pagination */}
+      <div className="mt-4 flex items-center justify-between text-sm">
+        <p className="text-ink-faint">
+          {total === 0
+            ? "No accounts"
+            : `${(page - 1) * pageSize + 1}–${Math.min(
+                page * pageSize,
+                total,
+              )} of ${total}`}
+        </p>
+        <div className="flex items-center gap-2">
+          <PageLink href={qs(page - 1)} disabled={page <= 1}>
+            ← Prev
+          </PageLink>
+          <span className="text-xs text-ink-faint">
+            Page {page} of {pageCount}
+          </span>
+          <PageLink href={qs(page + 1)} disabled={page >= pageCount}>
+            Next →
+          </PageLink>
         </div>
+      </div>
 
-        <h2 className="mt-10 text-lg font-semibold text-ink">
-          Moderated accounts
-        </h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          Sellers frozen for missing a release window, and accounts banned via the
-          forfeit flow. Open the case to review the chat and proof. A banned account
-          can be reinstated on appeal — that returns the forfeited funds and lets
-          them trade again.
-        </p>
+      <h2 className="mt-12 text-lg font-semibold text-ink">
+        Moderated accounts
+      </h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Sellers frozen for missing a release window, and accounts banned via the
+        forfeit flow. Reinstating a banned account returns the forfeited funds and
+        lets them trade again.
+      </p>
 
-        <Section
-          title="Frozen — awaiting a ruling"
-          empty="No frozen accounts."
-          accounts={frozen}
-        />
-        <Section
-          title="Banned — reviewable & appealable"
-          empty="No banned accounts."
-          accounts={banned}
-        />
+      <Section
+        title="Frozen — awaiting a ruling"
+        empty="No frozen accounts."
+        accounts={frozen}
+      />
+      <Section
+        title="Banned — reviewable & appealable"
+        empty="No banned accounts."
+        accounts={banned}
+      />
     </main>
+  );
+}
+
+function PageLink({
+  href,
+  disabled,
+  children,
+}: {
+  href: string;
+  disabled: boolean;
+  children: React.ReactNode;
+}) {
+  if (disabled) {
+    return (
+      <span className="cursor-not-allowed rounded-md border border-paper-border px-3 py-1.5 text-xs text-ink-faint opacity-50">
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className="rounded-md border border-paper-border px-3 py-1.5 text-xs text-ink-soft hover:bg-paper-sunken hover:text-ink"
+    >
+      {children}
+    </Link>
   );
 }
 

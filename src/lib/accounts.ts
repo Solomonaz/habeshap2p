@@ -10,8 +10,8 @@ import { toMicros, fromMicros } from "@/lib/money";
  * already guarded by an is_admin check — the SQL re-verifies is_admin anyway.
  */
 
-/** A search hit in admin account management. */
-export type AccountSearchResult = {
+/** One account row in the admin management table. */
+export type AccountRow = {
   userId: string;
   fullName: string | null;
   email: string | null;
@@ -20,73 +20,106 @@ export type AccountSearchResult = {
   banReason: string | null;
   isAdmin: boolean;
   forfeitedUsdt: string;
+  createdAt: string;
+};
+
+type RawUser = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  public_id: string | null;
+  account_status: AccountStatus;
+  ban_reason: string | null;
+  is_admin: boolean;
+  created_at: string;
 };
 
 /**
- * Find accounts by email, name, or HabeshaP2P ID (public_id / UID) for the admin
- * moderation tools. Service-role read; caller must be an admin. Empty query
- * returns nothing (no dumping the whole user table).
+ * Attach each user's net forfeited amount (FORFEIT − UNFORFEIT in the ledger —
+ * per-user forfeiture isn't a wallet column). Lets the UI steer forfeit-bans to
+ * Reinstate (which returns the funds) instead of a plain unban.
  */
-export async function searchAccounts(
-  query: string,
-): Promise<AccountSearchResult[]> {
-  const q = query.trim();
-  if (q.length < 2) return [];
-  const admin = createAdminSupabase();
-  // Match email/name (case-insensitive substring) or an exact public_id/UUID.
-  const like = `%${q.replace(/[%_]/g, "")}%`;
-  const ors = [`email.ilike.${like}`, `full_name.ilike.${like}`, `public_id.eq.${q}`];
-  if (/^[0-9a-f-]{36}$/i.test(q)) ors.push(`id.eq.${q}`);
-  const { data, error } = await admin
-    .from("users")
-    .select("id, full_name, email, public_id, account_status, ban_reason, is_admin")
-    .or(ors.join(","))
-    .limit(20);
-  if (error) throw new Error(`account search failed: ${error.message}`);
-  const rows = (data ?? []) as {
-    id: string;
-    full_name: string | null;
-    email: string | null;
-    public_id: string | null;
-    account_status: AccountStatus;
-    ban_reason: string | null;
-    is_admin: boolean;
-  }[];
+async function toAccountRows(
+  admin: ReturnType<typeof createAdminSupabase>,
+  rows: RawUser[],
+): Promise<AccountRow[]> {
   if (rows.length === 0) return [];
-
-  // Per-user forfeiture is recorded in the ledger (FORFEIT − UNFORFEIT), not a
-  // wallet column — same source fetchModeratedAccounts uses. Lets the UI steer
-  // forfeit-bans to Reinstate (which returns the funds) rather than plain unban.
   const { data: ledger } = await admin
     .from("ledger_entries")
     .select("user_id, type, amount_usdt::text")
     .in("user_id", rows.map((r) => r.id))
     .in("type", ["FORFEIT", "UNFORFEIT"]);
-  const forfeitMicros = new Map<string, bigint>();
+  const forfeit = new Map<string, bigint>();
   for (const l of (ledger ?? []) as {
     user_id: string;
     type: string;
     amount_usdt: string;
   }[]) {
-    const cur = forfeitMicros.get(l.user_id) ?? 0n;
+    const cur = forfeit.get(l.user_id) ?? 0n;
     const d = toMicros(l.amount_usdt);
-    forfeitMicros.set(l.user_id, l.type === "FORFEIT" ? cur + d : cur - d);
+    forfeit.set(l.user_id, l.type === "FORFEIT" ? cur + d : cur - d);
+  }
+  return rows.map((r) => {
+    const net = forfeit.get(r.id) ?? 0n;
+    return {
+      userId: r.id,
+      fullName: r.full_name,
+      email: r.email,
+      publicId: r.public_id,
+      accountStatus: r.account_status,
+      banReason: r.ban_reason,
+      isAdmin: r.is_admin === true,
+      forfeitedUsdt: fromMicros(net > 0n ? net : 0n),
+      createdAt: r.created_at,
+    };
+  });
+}
+
+export const ACCOUNTS_PAGE_SIZE = 20;
+
+/**
+ * A page of accounts for the admin management table, newest first, with an
+ * optional text filter (email / name / HabeshaP2P ID). Service-role read; the
+ * caller must already be an admin. Returns the rows plus the total count for
+ * pagination.
+ */
+export async function fetchAccountsPage(opts: {
+  page: number;
+  pageSize?: number;
+  query?: string;
+}): Promise<{ rows: AccountRow[]; total: number; page: number; pageSize: number }> {
+  const admin = createAdminSupabase();
+  const pageSize = Math.min(Math.max(opts.pageSize ?? ACCOUNTS_PAGE_SIZE, 1), 100);
+  const page = Math.max(1, Math.floor(opts.page || 1));
+  const from = (page - 1) * pageSize;
+
+  let qb = admin
+    .from("users")
+    .select(
+      "id, full_name, email, public_id, account_status, ban_reason, is_admin, created_at",
+      { count: "exact" },
+    );
+
+  const q = (opts.query ?? "").trim();
+  if (q.length >= 2) {
+    const like = `%${q.replace(/[%_,()]/g, "")}%`;
+    const ors = [`email.ilike.${like}`, `full_name.ilike.${like}`];
+    if (/^\d+$/.test(q)) ors.push(`public_id.eq.${q}`);
+    if (/^[0-9a-f-]{36}$/i.test(q)) ors.push(`id.eq.${q}`);
+    qb = qb.or(ors.join(","));
   }
 
-  return rows.map((r) => ({
-    userId: r.id,
-    fullName: r.full_name,
-    email: r.email,
-    publicId: r.public_id,
-    accountStatus: r.account_status,
-    banReason: r.ban_reason,
-    isAdmin: r.is_admin === true,
-    forfeitedUsdt: fromMicros(
-      (forfeitMicros.get(r.id) ?? 0n) > 0n
-        ? forfeitMicros.get(r.id)!
-        : 0n,
-    ),
-  }));
+  const { data, count, error } = await qb
+    .order("created_at", { ascending: false })
+    .range(from, from + pageSize - 1);
+  if (error) throw new Error(`failed to load accounts: ${error.message}`);
+
+  return {
+    rows: await toAccountRows(admin, (data ?? []) as RawUser[]),
+    total: count ?? 0,
+    page,
+    pageSize,
+  };
 }
 
 /** Admin bans an account (freezes funds + hides it). SQL re-checks is_admin. */

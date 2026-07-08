@@ -8,13 +8,7 @@ import { isAdmin } from "@/lib/admin";
 import { createNotification } from "@/lib/notifications";
 import { formatUsdt } from "@/lib/money";
 import { resolveDispute } from "@/lib/disputes";
-import {
-  reinstateAccount,
-  searchAccounts,
-  banAccount,
-  unbanAccount,
-  type AccountSearchResult,
-} from "@/lib/accounts";
+import { reinstateAccount, banAccount, unbanAccount } from "@/lib/accounts";
 import { createClient } from "@supabase/supabase-js";
 import {
   approveWithdrawal,
@@ -1349,18 +1343,6 @@ async function requireAdmin() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) return { error: "Not authorized" as const };
   return { user };
-}
-
-export async function searchAccountsAction(
-  query: string,
-): Promise<{ results?: AccountSearchResult[]; error?: string }> {
-  const gate = await requireAdmin();
-  if ("error" in gate) return { error: gate.error };
-  try {
-    return { results: await searchAccounts(query) };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Search failed" };
-  }
 }
 
 export async function banAccountAction(
