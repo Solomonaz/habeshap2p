@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { isAdmin } from "@/lib/admin";
-import { fetchPlatformStats } from "@/lib/ops";
+import { fetchPlatformStats, getIncomeBreakdown } from "@/lib/ops";
 import { fetchRecentAdminActions } from "@/lib/audit";
 import { fetchHotWalletReserve } from "@/lib/chain";
 import { summarizeReserves } from "@/lib/platform";
-import { formatUsdt } from "@/lib/money";
+import { formatUsdt, toMicros, fromMicros } from "@/lib/money";
 import { traderHandle } from "@/lib/handle";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +23,34 @@ export default async function AdminOverviewPage() {
   if (!user) redirect("/login");
   if (!(await isAdmin(supabase, user.id))) redirect("/market");
 
-  const [stats, actions, hotWallet] = await Promise.all([
+  const [stats, actions, hotWallet, income] = await Promise.all([
     fetchPlatformStats(),
     fetchRecentAdminActions(50),
     fetchHotWalletReserve(),
+    getIncomeBreakdown(),
   ]);
   const reserves = summarizeReserves(stats);
+
+  // Withdrawable surplus = on-chain reserve − what you owe users. Only meaningful
+  // in live mode (the on-chain float is the real backing).
+  const reserveUsdt = hotWallet.live ? hotWallet.reserve?.usdt : null;
+  const surplusMicros =
+    reserveUsdt != null
+      ? toMicros(reserveUsdt) - toMicros(stats.liabilities)
+      : null;
+  const surplus = surplusMicros != null ? fromMicros(surplusMicros) : null;
+
+  const incomeSources = [
+    { label: "Trade fees", value: income.tradeFees, hint: "buyer + seller %" },
+    { label: "Withdrawal fees", value: income.withdrawalFees, hint: "per withdrawal" },
+    { label: "Transfer fees", value: income.transferFees, hint: "internal sends" },
+    {
+      label: "Referral payouts",
+      value: income.referralPayouts,
+      hint: "paid to referrers",
+      negative: true,
+    },
+  ];
 
   const balanceCards = [
     { label: "Available", value: stats.available },
@@ -81,6 +103,59 @@ export default async function AdminOverviewPage() {
               ? "✓ Buckets reconcile (recomputed in exact micros)."
               : "⚠ Bucket totals do NOT reconcile — investigate immediately."}
           </p>
+        </section>
+
+        {/* Income analysis — where the platform's money is made. */}
+        <section className="mt-4 overflow-hidden rounded-card border border-state-released/30 bg-gradient-to-br from-state-released/10 to-paper-raised p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-medium text-ink-muted">
+                Net income (your earnings)
+              </h2>
+              <p className="mt-1 font-amount text-3xl text-state-released">
+                {formatUsdt(income.net)} USDT
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                All fees collected, minus referral payouts. Held in the platform
+                account (not owed to any user).
+              </p>
+            </div>
+            {surplus != null && (
+              <div className="rounded-md border border-paper-border bg-paper/60 px-3 py-2 text-right">
+                <p className="text-xs text-ink-muted">Withdrawable surplus</p>
+                <p
+                  className={
+                    "mt-0.5 font-amount text-lg " +
+                    (Number(surplus) >= 0 ? "text-ink" : "text-sell")
+                  }
+                >
+                  {formatUsdt(surplus)} USDT
+                </p>
+                <p className="text-[11px] text-ink-faint">reserve − liabilities</p>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {incomeSources.map((s) => (
+              <div
+                key={s.label}
+                className="rounded-md border border-paper-border bg-paper px-3 py-2.5"
+              >
+                <p className="text-xs text-ink-muted">{s.label}</p>
+                <p
+                  className={
+                    "mt-0.5 font-amount text-base " +
+                    (s.negative ? "text-sell" : "text-ink")
+                  }
+                >
+                  {s.negative ? "−" : ""}
+                  {formatUsdt(s.value)}
+                </p>
+                <p className="text-[11px] text-ink-faint">{s.hint}</p>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* Hot-wallet reserve — the on-chain float that backs withdrawals. */}

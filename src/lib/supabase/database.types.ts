@@ -837,6 +837,16 @@ export type Database = {
         Args: { p_ids: string[] };
         Returns: { id: string; confirmed: boolean }[];
       };
+      admin_income_breakdown: {
+        Args: Record<string, never>;
+        Returns: {
+          trade_fees: string;
+          withdrawal_fees: string;
+          transfer_fees: string;
+          referral_payouts: string;
+          net: string;
+        }[];
+      };
       admin_list_accounts: {
         Args: {
           p_query: string | null;

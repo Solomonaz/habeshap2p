@@ -37,7 +37,7 @@ export default async function AdminDisputePage({
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-10">
-        <Link href="/admin" className="text-sm text-ink-muted hover:text-ink">
+        <Link href="/admin/disputes" className="text-sm text-ink-muted hover:text-ink">
           ← Dispute queue
         </Link>
 

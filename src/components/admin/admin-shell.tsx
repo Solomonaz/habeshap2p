@@ -45,20 +45,19 @@ const NAV: {
   also?: string[];
 }[] = [
   {
-    href: "/admin",
+    href: "/admin/overview",
+    label: "Ops overview",
+    icon: <Icon path={<><path d="M4 19V5" /><path d="M4 19h16" /><rect x="7" y="11" width="3" height="5" /><rect x="12" y="7" width="3" height="9" /><rect x="17" y="13" width="3" height="3" /></>} />,
+  },
+  {
+    href: "/admin/disputes",
     label: "Disputes",
-    also: ["/admin/disputes"],
     icon: <Icon path={<><path d="M3 21h18" /><path d="M12 3v18" /><path d="M5 8l7-4 7 4" /><path d="M5 8l-2 5a3 3 0 0 0 6 0L7 8" /><path d="M17 8l-2 5a3 3 0 0 0 6 0l-2-5" /></>} />,
   },
   {
     href: "/admin/accounts",
     label: "Accounts",
     icon: <Icon path={<><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 6a3 3 0 0 1 0 6" /><path d="M18 14a6 6 0 0 1 3 5" /></>} />,
-  },
-  {
-    href: "/admin/overview",
-    label: "Ops overview",
-    icon: <Icon path={<><path d="M4 19V5" /><path d="M4 19h16" /><rect x="7" y="11" width="3" height="5" /><rect x="12" y="7" width="3" height="9" /><rect x="17" y="13" width="3" height="3" /></>} />,
   },
   {
     href: "/admin/preflight",
