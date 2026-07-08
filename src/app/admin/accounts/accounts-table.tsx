@@ -68,6 +68,7 @@ export function AccountsTable({ rows: initial }: { rows: AccountRow[] }) {
               <th className="px-4 py-2.5">User</th>
               <th className="px-4 py-2.5">UID</th>
               <th className="px-4 py-2.5">Status</th>
+              <th className="px-4 py-2.5">KYC</th>
               <th className="px-4 py-2.5 text-right">Action</th>
             </tr>
           </thead>
@@ -75,7 +76,7 @@ export function AccountsTable({ rows: initial }: { rows: AccountRow[] }) {
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={4}
+                  colSpan={5}
                   className="px-4 py-8 text-center text-sm text-ink-muted"
                 >
                   No accounts.
@@ -113,7 +114,10 @@ export function AccountsTable({ rows: initial }: { rows: AccountRow[] }) {
                       {a.publicId ?? "—"}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={a.accountStatus} />
+                      <StatusBadge status={displayStatus(a)} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <KycBadge status={a.kycStatus} />
                     </td>
                     <td className="px-4 py-3 text-right">
                       {a.isAdmin ? (
@@ -213,13 +217,27 @@ export function AccountsTable({ rows: initial }: { rows: AccountRow[] }) {
   );
 }
 
+/**
+ * Display status shown to the admin: a registered-but-email-unconfirmed account
+ * is "INACTIVE" (they can't sign in), taking priority over ACTIVE but not over a
+ * ban/freeze.
+ */
+function displayStatus(a: AccountRow): string {
+  if (a.accountStatus === "BANNED") return "BANNED";
+  if (a.accountStatus === "FROZEN") return "FROZEN";
+  if (!a.emailConfirmed) return "INACTIVE";
+  return "ACTIVE";
+}
+
 function StatusBadge({ status }: { status: string }) {
   const cls =
     status === "BANNED"
       ? "bg-sell-wash text-sell"
       : status === "FROZEN"
         ? "bg-amber-wash text-amber"
-        : "bg-buy-wash text-buy";
+        : status === "INACTIVE"
+          ? "bg-paper-sunken text-ink-faint"
+          : "bg-buy-wash text-buy";
   return (
     <span
       className={
@@ -228,6 +246,27 @@ function StatusBadge({ status }: { status: string }) {
       }
     >
       {status}
+    </span>
+  );
+}
+
+function KycBadge({ status }: { status: string }) {
+  const v =
+    status === "APPROVED"
+      ? { label: "Verified", cls: "bg-buy-wash text-buy" }
+      : status === "PENDING"
+        ? { label: "Pending", cls: "bg-amber-wash text-amber" }
+        : status === "REJECTED"
+          ? { label: "Rejected", cls: "bg-sell-wash text-sell" }
+          : { label: "Unverified", cls: "bg-paper-sunken text-ink-faint" };
+  return (
+    <span
+      className={
+        "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide " +
+        v.cls
+      }
+    >
+      {v.label}
     </span>
   );
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminSupabase } from "@/lib/supabase/server";
-import type { AccountStatus } from "@/lib/supabase/database.types";
+import type { AccountStatus, KycStatus } from "@/lib/supabase/database.types";
 import { toMicros, fromMicros } from "@/lib/money";
 
 /**
@@ -21,6 +21,9 @@ export type AccountRow = {
   isAdmin: boolean;
   forfeitedUsdt: string;
   createdAt: string;
+  kycStatus: KycStatus;
+  /** Whether the account confirmed its email/phone; false ⇒ shown "Inactive". */
+  emailConfirmed: boolean;
 };
 
 type RawUser = {
@@ -32,6 +35,7 @@ type RawUser = {
   ban_reason: string | null;
   is_admin: boolean;
   created_at: string;
+  kyc_status: KycStatus;
 };
 
 /**
@@ -44,11 +48,18 @@ async function toAccountRows(
   rows: RawUser[],
 ): Promise<AccountRow[]> {
   if (rows.length === 0) return [];
-  const { data: ledger } = await admin
-    .from("ledger_entries")
-    .select("user_id, type, amount_usdt::text")
-    .in("user_id", rows.map((r) => r.id))
-    .in("type", ["FORFEIT", "UNFORFEIT"]);
+  const ids = rows.map((r) => r.id);
+  const [{ data: ledger }, { data: emailRows }] = await Promise.all([
+    admin
+      .from("ledger_entries")
+      .select("user_id, type, amount_usdt::text")
+      .in("user_id", ids)
+      .in("type", ["FORFEIT", "UNFORFEIT"]),
+    // Email/phone confirmation lives on auth.users — read via the SECURITY
+    // DEFINER helper (migration 0055).
+    admin.rpc("accounts_email_confirmed", { p_ids: ids }),
+  ]);
+
   const forfeit = new Map<string, bigint>();
   for (const l of (ledger ?? []) as {
     user_id: string;
@@ -59,6 +70,13 @@ async function toAccountRows(
     const d = toMicros(l.amount_usdt);
     forfeit.set(l.user_id, l.type === "FORFEIT" ? cur + d : cur - d);
   }
+  const confirmed = new Map(
+    ((emailRows ?? []) as { id: string; confirmed: boolean }[]).map((e) => [
+      e.id,
+      e.confirmed,
+    ]),
+  );
+
   return rows.map((r) => {
     const net = forfeit.get(r.id) ?? 0n;
     return {
@@ -71,6 +89,8 @@ async function toAccountRows(
       isAdmin: r.is_admin === true,
       forfeitedUsdt: fromMicros(net > 0n ? net : 0n),
       createdAt: r.created_at,
+      kycStatus: r.kyc_status,
+      emailConfirmed: confirmed.get(r.id) ?? false,
     };
   });
 }
@@ -96,7 +116,7 @@ export async function fetchAccountsPage(opts: {
   let qb = admin
     .from("users")
     .select(
-      "id, full_name, email, public_id, account_status, ban_reason, is_admin, created_at",
+      "id, full_name, email, public_id, account_status, ban_reason, is_admin, created_at, kyc_status",
       { count: "exact" },
     );
 

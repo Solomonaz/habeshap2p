@@ -833,6 +833,10 @@ export type Database = {
         Args: { p_admin: string; p_user: string };
         Returns: undefined;
       };
+      accounts_email_confirmed: {
+        Args: { p_ids: string[] };
+        Returns: { id: string; confirmed: boolean }[];
+      };
       // ── dispute resolution (migration 0010) ──
       order_open_dispute: {
         Args: { p_order: string; p_actor: string; p_reason: string };
