@@ -837,6 +837,26 @@ export type Database = {
         Args: { p_ids: string[] };
         Returns: { id: string; confirmed: boolean }[];
       };
+      admin_list_accounts: {
+        Args: {
+          p_query: string | null;
+          p_only_inactive: boolean;
+          p_limit: number;
+          p_offset: number;
+        };
+        Returns: {
+          id: string;
+          full_name: string | null;
+          email: string | null;
+          public_id: string | null;
+          account_status: AccountStatus;
+          ban_reason: string | null;
+          kyc_status: KycStatus;
+          email_confirmed: boolean;
+          created_at: string;
+          total: number;
+        }[];
+      };
       // ── dispute resolution (migration 0010) ──
       order_open_dispute: {
         Args: { p_order: string; p_actor: string; p_reason: string };

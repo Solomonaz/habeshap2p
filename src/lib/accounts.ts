@@ -26,16 +26,17 @@ export type AccountRow = {
   emailConfirmed: boolean;
 };
 
-type RawUser = {
+type RawAccount = {
   id: string;
   full_name: string | null;
   email: string | null;
   public_id: string | null;
   account_status: AccountStatus;
   ban_reason: string | null;
-  is_admin: boolean;
-  created_at: string;
   kyc_status: KycStatus;
+  email_confirmed: boolean;
+  created_at: string;
+  total: number;
 };
 
 /**
@@ -43,23 +44,16 @@ type RawUser = {
  * per-user forfeiture isn't a wallet column). Lets the UI steer forfeit-bans to
  * Reinstate (which returns the funds) instead of a plain unban.
  */
-async function toAccountRows(
+async function attachForfeited(
   admin: ReturnType<typeof createAdminSupabase>,
-  rows: RawUser[],
+  raw: RawAccount[],
 ): Promise<AccountRow[]> {
-  if (rows.length === 0) return [];
-  const ids = rows.map((r) => r.id);
-  const [{ data: ledger }, { data: emailRows }] = await Promise.all([
-    admin
-      .from("ledger_entries")
-      .select("user_id, type, amount_usdt::text")
-      .in("user_id", ids)
-      .in("type", ["FORFEIT", "UNFORFEIT"]),
-    // Email/phone confirmation lives on auth.users — read via the SECURITY
-    // DEFINER helper (migration 0055).
-    admin.rpc("accounts_email_confirmed", { p_ids: ids }),
-  ]);
-
+  if (raw.length === 0) return [];
+  const { data: ledger } = await admin
+    .from("ledger_entries")
+    .select("user_id, type, amount_usdt::text")
+    .in("user_id", raw.map((r) => r.id))
+    .in("type", ["FORFEIT", "UNFORFEIT"]);
   const forfeit = new Map<string, bigint>();
   for (const l of (ledger ?? []) as {
     user_id: string;
@@ -70,14 +64,7 @@ async function toAccountRows(
     const d = toMicros(l.amount_usdt);
     forfeit.set(l.user_id, l.type === "FORFEIT" ? cur + d : cur - d);
   }
-  const confirmed = new Map(
-    ((emailRows ?? []) as { id: string; confirmed: boolean }[]).map((e) => [
-      e.id,
-      e.confirmed,
-    ]),
-  );
-
-  return rows.map((r) => {
+  return raw.map((r) => {
     const net = forfeit.get(r.id) ?? 0n;
     return {
       userId: r.id,
@@ -86,11 +73,11 @@ async function toAccountRows(
       publicId: r.public_id,
       accountStatus: r.account_status,
       banReason: r.ban_reason,
-      isAdmin: r.is_admin === true,
+      isAdmin: false, // admins are excluded from this listing entirely
       forfeitedUsdt: fromMicros(net > 0n ? net : 0n),
       createdAt: r.created_at,
       kycStatus: r.kyc_status,
-      emailConfirmed: confirmed.get(r.id) ?? false,
+      emailConfirmed: r.email_confirmed,
     };
   });
 }
@@ -98,48 +85,33 @@ async function toAccountRows(
 export const ACCOUNTS_PAGE_SIZE = 20;
 
 /**
- * A page of accounts for the admin management table, newest first, with an
- * optional text filter (email / name / HabeshaP2P ID). Service-role read; the
- * caller must already be an admin. Returns the rows plus the total count for
- * pagination.
+ * A page of NON-ADMIN accounts for the admin management table (migration 0056),
+ * newest first. Options: a text filter (email / name / HabeshaP2P ID) and an
+ * "inactive only" filter (registered but never confirmed their email/phone).
+ * Service-role read; the caller must already be an admin.
  */
 export async function fetchAccountsPage(opts: {
   page: number;
   pageSize?: number;
   query?: string;
+  onlyInactive?: boolean;
 }): Promise<{ rows: AccountRow[]; total: number; page: number; pageSize: number }> {
   const admin = createAdminSupabase();
   const pageSize = Math.min(Math.max(opts.pageSize ?? ACCOUNTS_PAGE_SIZE, 1), 100);
   const page = Math.max(1, Math.floor(opts.page || 1));
-  const from = (page - 1) * pageSize;
+  const query = (opts.query ?? "").trim();
 
-  let qb = admin
-    .from("users")
-    .select(
-      "id, full_name, email, public_id, account_status, ban_reason, is_admin, created_at, kyc_status",
-      { count: "exact" },
-    );
-
-  const q = (opts.query ?? "").trim();
-  if (q.length >= 2) {
-    const like = `%${q.replace(/[%_,()]/g, "")}%`;
-    const ors = [`email.ilike.${like}`, `full_name.ilike.${like}`];
-    if (/^\d+$/.test(q)) ors.push(`public_id.eq.${q}`);
-    if (/^[0-9a-f-]{36}$/i.test(q)) ors.push(`id.eq.${q}`);
-    qb = qb.or(ors.join(","));
-  }
-
-  const { data, count, error } = await qb
-    .order("created_at", { ascending: false })
-    .range(from, from + pageSize - 1);
+  const { data, error } = await admin.rpc("admin_list_accounts", {
+    p_query: query.length >= 2 ? query : null,
+    p_only_inactive: !!opts.onlyInactive,
+    p_limit: pageSize,
+    p_offset: (page - 1) * pageSize,
+  });
   if (error) throw new Error(`failed to load accounts: ${error.message}`);
 
-  return {
-    rows: await toAccountRows(admin, (data ?? []) as RawUser[]),
-    total: count ?? 0,
-    page,
-    pageSize,
-  };
+  const raw = (data ?? []) as RawAccount[];
+  const total = Number(raw[0]?.total ?? 0);
+  return { rows: await attachForfeited(admin, raw), total, page, pageSize };
 }
 
 /** Admin bans an account (freezes funds + hides it). SQL re-checks is_admin. */

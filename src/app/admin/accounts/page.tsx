@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminAccountsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string }>;
+  searchParams: Promise<{ page?: string; q?: string; status?: string }>;
 }) {
   const supabase = await createServerSupabase();
   const {
@@ -27,18 +27,26 @@ export default async function AdminAccountsPage({
 
   const sp = await searchParams;
   const query = (sp.q ?? "").trim();
+  const onlyInactive = sp.status === "inactive";
   const page = Math.max(1, Number(sp.page) || 1);
 
   const [{ rows, total, pageSize }, moderated] = await Promise.all([
-    fetchAccountsPage({ page, query }),
+    fetchAccountsPage({ page, query, onlyInactive }),
     fetchModeratedAccounts(),
   ]);
   const frozen = moderated.filter((a) => a.accountStatus === "FROZEN");
   const banned = moderated.filter((a) => a.accountStatus === "BANNED");
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const qs = (p: number) =>
-    `?page=${p}${query ? `&q=${encodeURIComponent(query)}` : ""}`;
+  const keep = `${query ? `&q=${encodeURIComponent(query)}` : ""}${
+    onlyInactive ? "&status=inactive" : ""
+  }`;
+  const qs = (p: number) => `?page=${p}${keep}`;
+  // Filter pills preserve the active text query but reset to page 1.
+  const filterHref = (inactive: boolean) =>
+    `?page=1${query ? `&q=${encodeURIComponent(query)}` : ""}${
+      inactive ? "&status=inactive" : ""
+    }`;
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6 sm:py-10">
@@ -48,8 +56,19 @@ export default async function AdminAccountsPage({
         (nothing is deleted); unban to restore it.
       </p>
 
-      {/* Optional filter — the table shows everyone by default. */}
-      <form method="get" className="mt-6 flex items-center gap-2">
+      {/* Status filter — all accounts vs registered-but-unconfirmed only. */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <FilterPill href={filterHref(false)} active={!onlyInactive}>
+          All accounts
+        </FilterPill>
+        <FilterPill href={filterHref(true)} active={onlyInactive}>
+          Inactive only
+        </FilterPill>
+      </div>
+
+      {/* Text filter — preserves the active status pill. */}
+      <form method="get" className="mt-3 flex items-center gap-2">
+        {onlyInactive && <input type="hidden" name="status" value="inactive" />}
         <input
           type="text"
           name="q"
@@ -65,7 +84,7 @@ export default async function AdminAccountsPage({
         </button>
         {query && (
           <Link
-            href="?page=1"
+            href={filterHref(onlyInactive)}
             className="text-sm text-ink-muted underline hover:text-ink"
           >
             Clear
@@ -120,6 +139,31 @@ export default async function AdminAccountsPage({
         accounts={banned}
       />
     </main>
+  );
+}
+
+function FilterPill({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "true" : undefined}
+      className={
+        "rounded-full border px-4 py-1.5 text-sm font-medium transition-colors " +
+        (active
+          ? "border-transparent bg-ink text-paper"
+          : "border-paper-border bg-paper-raised text-ink-soft hover:border-ink/20 hover:text-ink")
+      }
+    >
+      {children}
+    </Link>
   );
 }
 

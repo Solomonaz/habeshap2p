@@ -325,7 +325,7 @@ export default async function DashboardPage() {
       ? [
           {
             id: "refer",
-            label: "Refer & earn",
+            label: "Refer",
             icon: IconRefer,
             content: (
               <ReferralPanel
