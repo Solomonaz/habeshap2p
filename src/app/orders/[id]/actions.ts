@@ -14,6 +14,7 @@ import {
 } from "@/lib/orders";
 import { openDispute } from "@/lib/disputes";
 import { createNotification, notifyAdmins } from "@/lib/notifications";
+import { notifyIfSellAdUnderfunded } from "@/lib/ad-alerts";
 import { formatUsdt } from "@/lib/money";
 
 const schema = z.object({
@@ -100,6 +101,10 @@ export async function runOrderAction(
             body: `${amt} USDT released to you — trade complete.`,
             href,
           });
+          // The seller's balance just dropped by this order. If their live SELL
+          // ad now advertises more than they can fund, nudge them (with a sound)
+          // to lower its limit or top up before buyers hit failed orders.
+          await notifyIfSellAdUnderfunded(order.seller_id);
           break;
         case "cancel":
           await createNotification({

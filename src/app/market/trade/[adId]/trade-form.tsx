@@ -9,6 +9,7 @@ import {
   accountNumberPlaceholder,
 } from "@/lib/labels";
 import { formatEtb, formatRate } from "@/lib/format";
+import { formatUsdt } from "@/lib/money";
 import { formatTradeLimit } from "@/lib/reputation";
 import { traderName } from "@/lib/handle";
 import { CopyButton } from "@/components/copy-button";
@@ -34,10 +35,20 @@ export function TradeForm({
     ad.payment_methods[0] ?? "TELEBIRR",
   );
 
+  // For a SELL ad the buyer can only take up to the seller's LIVE capacity, capped
+  // by their current balance (migration 0059). `fundable` is false when the seller
+  // can't even cover this ad's minimum right now. BUY ads carry no capacity.
+  const cap = takerIsBuyer ? ad.capacity ?? null : null;
+  const sellerOutOfFunds = cap != null && !cap.fundable;
+  const maxEtb = cap?.effectiveMaxEtb ?? ad.max_etb;
+
   const amountNum = Number(amount);
   const etb = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * rate : 0;
   const minUsdt = rate > 0 ? Number(ad.min_etb) / rate : 0;
-  const maxUsdt = rate > 0 ? Number(ad.max_etb) / rate : 0;
+  const maxUsdt = rate > 0 ? Number(maxEtb) / rate : 0;
+  // The buyer's amount can't exceed what the seller can actually deliver now.
+  const overSellerMax =
+    takerIsBuyer && cap != null && amountNum > 0 && amountNum > maxUsdt;
 
   // For a SELL ad, show the receiving account of the method the buyer picked
   // (migration 0052). Fall back to the legacy single columns for older ads.
@@ -82,9 +93,17 @@ export function TradeForm({
         <div className="flex justify-between">
           <dt className="text-ink-muted">Limits</dt>
           <dd className="font-amount text-ink-soft">
-            {formatEtb(ad.min_etb)}–{formatEtb(ad.max_etb)} ETB
+            {formatEtb(ad.min_etb)}–{formatEtb(maxEtb)} ETB
           </dd>
         </div>
+        {cap != null && !sellerOutOfFunds && (
+          <div className="flex justify-between">
+            <dt className="text-ink-muted">Available now</dt>
+            <dd className="font-amount text-ink-soft">
+              {formatUsdt(String(maxUsdt))} USDT
+            </dd>
+          </div>
+        )}
         <div className="flex justify-between">
           <dt className="text-ink-muted">Counterparty</dt>
           <dd className="flex items-center gap-1.5 text-ink-soft">
@@ -132,6 +151,13 @@ export function TradeForm({
         </div>
       )}
 
+      {sellerOutOfFunds && (
+        <div className="mt-4 rounded-md border border-amber/40 bg-amber-wash px-3 py-2.5 text-sm text-ink-soft">
+          This seller is temporarily out of USDT for this offer, so it can&apos;t
+          be taken right now. Please check back later or choose another offer.
+        </div>
+      )}
+
       <form action={formAction} className="mt-6 space-y-4">
         <input type="hidden" name="adId" value={ad.id} />
 
@@ -155,6 +181,12 @@ export function TradeForm({
             <span className="mt-1 block text-xs text-sell">
               Exceeds your {formatTradeLimit(takerLimit)} per-order limit. Post a
               merchant bond on your account to lift it.
+            </span>
+          )}
+          {overSellerMax && !overLimit && (
+            <span className="mt-1 block text-xs text-sell">
+              Only {formatUsdt(String(maxUsdt))} USDT is available from this
+              seller right now — lower the amount.
             </span>
           )}
         </label>
@@ -302,7 +334,7 @@ export function TradeForm({
 
         <button
           type="submit"
-          disabled={pending || overLimit}
+          disabled={pending || overLimit || overSellerMax || sellerOutOfFunds}
           className={
             "w-full rounded-md px-4 py-2.5 text-sm font-semibold disabled:opacity-60 " +
             actionColor

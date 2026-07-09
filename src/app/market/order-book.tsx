@@ -70,7 +70,9 @@ export function OrderBook({
       if (a.side !== wantSide) return false;
       if (method !== "ALL" && !a.payment_methods.includes(method)) return false;
       if (amt != null && Number.isFinite(amt)) {
-        if (amt < Number(a.min_etb) || amt > Number(a.max_etb)) return false;
+        // For SELL ads, filter against the seller's LIVE max (capped by balance).
+        const effMax = Number(a.capacity?.effectiveMaxEtb ?? a.max_etb);
+        if (amt < Number(a.min_etb) || amt > effMax) return false;
       }
       return true;
     });
@@ -226,10 +228,13 @@ function AdCard({
   const takerBuys = tab === "buy";
   const name = traderName(ad.poster?.full_name, ad.user_id);
   const verified = ad.poster?.is_verified ?? false;
-  // Order ceiling in USDT, derived from the public ETB limits — no wallet leak.
+  // Order ceiling derived from the ETB limits. For a SELL ad we use the seller's
+  // LIVE max (capped by their current balance, migration 0059) so buyers never see
+  // a limit the seller can't fund; it only ever exposes the ad's own liquidity.
   const rate = Number(ad.rate_etb);
+  const maxEtb = ad.capacity?.effectiveMaxEtb ?? ad.max_etb;
   const minUsdt = rate > 0 ? (Number(ad.min_etb) / rate).toFixed(2) : "0";
-  const maxUsdt = rate > 0 ? (Number(ad.max_etb) / rate).toFixed(2) : "0";
+  const maxUsdt = rate > 0 ? (Number(maxEtb) / rate).toFixed(2) : "0";
 
   return (
     <li className="group rounded-xl border border-paper-border bg-paper-sunken/30 p-5 transition-all duration-150 hover:border-ink-faint/50 hover:bg-paper-sunken/60">
@@ -296,7 +301,7 @@ function AdCard({
             <p className="text-xs text-ink-faint">
               <span className="text-ink-muted">Limit</span>{" "}
               <span className="font-amount text-ink-soft">
-                {formatEtb(ad.min_etb)} – {formatEtb(ad.max_etb)} ETB
+                {formatEtb(ad.min_etb)} – {formatEtb(maxEtb)} ETB
               </span>
             </p>
             <p className="text-xs text-ink-faint">

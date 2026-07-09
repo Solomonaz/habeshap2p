@@ -4,7 +4,48 @@ import type { Database } from "@/lib/supabase/database.types";
 export type AdRow = Database["public"]["Tables"]["ads"]["Row"];
 export type PublicProfile =
   Database["public"]["Views"]["public_profiles"]["Row"];
-export type AdWithPoster = AdRow & { poster: PublicProfile | null };
+
+/**
+ * A SELL ad's live capacity (migration 0059), derived from the seller's current
+ * available USDT. `effectiveMaxEtb` is the real max order a buyer can place now
+ * (≤ the ad's configured max); `fundable` is false when the seller can't even
+ * cover the ad's minimum — the ad can't trade until they top up or edit it.
+ */
+export type AdCapacity = {
+  availableUsdt: string;
+  effectiveMaxEtb: string;
+  fundable: boolean;
+};
+export type AdWithPoster = AdRow & {
+  poster: PublicProfile | null;
+  capacity?: AdCapacity | null;
+};
+
+/**
+ * Load live SELL-ad capacity for the given ad ids via the SECURITY DEFINER RPC
+ * (buyers can't read sellers' wallets under RLS). Best-effort: any error returns
+ * an empty map so callers fail OPEN to the ad's configured limits — never break
+ * the order book over a capacity read.
+ */
+export async function fetchSellAdCapacities(
+  supabase: SupabaseClient<Database>,
+  adIds: string[],
+): Promise<Map<string, AdCapacity>> {
+  const out = new Map<string, AdCapacity>();
+  if (adIds.length === 0) return out;
+  const { data, error } = await supabase.rpc("ad_sell_capacity", {
+    p_ids: adIds,
+  });
+  if (error || !data) return out;
+  for (const row of data) {
+    out.set(row.ad_id, {
+      availableUsdt: row.available_usdt ?? "0",
+      effectiveMaxEtb: row.effective_max_etb ?? "0",
+      fundable: row.fundable ?? false,
+    });
+  }
+  return out;
+}
 
 /**
  * Explicit column list with the numeric ETB columns cast to text. PostgREST
@@ -45,9 +86,24 @@ export async function fetchActiveAds(
   // public_profiles only exposes ACTIVE accounts (migration 0053), so a poster
   // with no profile is banned/frozen — drop their ads from the public order book
   // (the rows are preserved and reappear the moment the account is unbanned).
-  return ads
+  const visible: AdWithPoster[] = ads
     .filter((ad) => byId.has(ad.user_id))
     .map((ad) => ({ ...ad, poster: byId.get(ad.user_id) ?? null }));
+
+  // Attach live SELL-ad capacity so buyers see the seller's REAL max, and drop
+  // SELL ads the seller can no longer fund even at their minimum (migration 0059).
+  // Fail-open: if the capacity read returns nothing, ads keep their configured
+  // limits rather than vanishing from the book.
+  const sellIds = visible.filter((a) => a.side === "SELL").map((a) => a.id);
+  const caps = await fetchSellAdCapacities(supabase, sellIds);
+  if (caps.size === 0) return visible;
+  return visible.filter((ad) => {
+    if (ad.side !== "SELL") return true;
+    const cap = caps.get(ad.id);
+    if (!cap) return true; // no reading for this ad → leave it as-is
+    ad.capacity = cap;
+    return cap.fundable; // hide ads that can't cover even their minimum order
+  });
 }
 
 /** Loads a single ad by id with its poster's public reputation (or null). */
@@ -68,7 +124,14 @@ export async function fetchAd(
     .select("*")
     .eq("id", ad.user_id)
     .maybeSingle();
-  return { ...ad, poster: profile ?? null };
+
+  // SELL ads carry live capacity so the trade page shows the seller's real max
+  // and can block/flag an order the seller can't currently fund (migration 0059).
+  let capacity: AdCapacity | null = null;
+  if (ad.side === "SELL") {
+    capacity = (await fetchSellAdCapacities(supabase, [ad.id])).get(ad.id) ?? null;
+  }
+  return { ...ad, poster: profile ?? null, capacity };
 }
 
 /** Loads a single user's public profile (safe columns) by id, or null. */

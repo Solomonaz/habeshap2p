@@ -69,3 +69,33 @@ export function sellMaxExceedsBalance(
   const rhs = a.mantissa * r.mantissa * 10n ** BigInt(mx.scale);
   return lhs > rhs;
 }
+
+/**
+ * Can the seller's available USDT cover at least this SELL ad's MINIMUM order?
+ * If not, the ad can't produce a single valid order right now — it's effectively
+ * out of liquidity. (min_etb ≤ available × rate ⇔ NOT min_etb > available × rate.)
+ */
+export function sellFundsCoverMin(
+  minEtb: string | number,
+  availableUsdt: string | number,
+  rateEtb: string | number,
+): boolean {
+  return !sellMaxExceedsBalance(minEtb, availableUsdt, rateEtb);
+}
+
+/**
+ * A SELL ad's LIVE max order (ETB): the lesser of its configured max and what the
+ * seller's balance can actually fund at the rate — mirrors the SQL
+ * `least(max_etb, trunc(available × rate, 2))` in migration 0059. Returned as a
+ * plain decimal string. Used as a fail-open client fallback when the capacity RPC
+ * is unavailable; the RPC value is authoritative when present.
+ */
+export function effectiveMaxEtb(
+  maxEtb: string | number,
+  availableUsdt: string | number,
+  rateEtb: string | number,
+): string {
+  return sellMaxExceedsBalance(maxEtb, availableUsdt, rateEtb)
+    ? maxEtbForBalance(availableUsdt, rateEtb)
+    : String(maxEtb).trim();
+}

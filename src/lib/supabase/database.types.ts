@@ -841,6 +841,17 @@ export type Database = {
         Args: { p_ids: string[] };
         Returns: { id: string; confirmed: boolean }[];
       };
+      // Live sellable capacity for SELL ads (migration 0059): the seller's real
+      // max order given their current balance, and whether they can cover the min.
+      ad_sell_capacity: {
+        Args: { p_ids: string[] };
+        Returns: {
+          ad_id: string;
+          available_usdt: string;
+          effective_max_etb: string;
+          fundable: boolean;
+        }[];
+      };
       admin_income_breakdown: {
         Args: Record<string, never>;
         Returns: {

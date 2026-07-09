@@ -3,6 +3,8 @@ import {
   isNonNegativeDecimal,
   maxEtbForBalance,
   sellMaxExceedsBalance,
+  sellFundsCoverMin,
+  effectiveMaxEtb,
 } from "@/lib/ad-capacity";
 
 describe("isNonNegativeDecimal", () => {
@@ -65,5 +67,35 @@ describe("sellMaxExceedsBalance", () => {
   it("is exact across differing decimal scales", () => {
     expect(sellMaxExceedsBalance("100.50", "1.005", "100.005")).toBe(false);
     expect(sellMaxExceedsBalance("100.51", "1.005", "100.005")).toBe(true);
+  });
+});
+
+describe("sellFundsCoverMin", () => {
+  it("true when the balance funds at least the min order", () => {
+    // 0.16 USDT at 190 → covers 30.40 ETB; a 1,000 ETB min is NOT covered.
+    expect(sellFundsCoverMin("1000", "0.161402", "190")).toBe(false);
+    // 10 USDT at 190 → 1,900 ETB ≥ 1,000 ETB min.
+    expect(sellFundsCoverMin("1000", "10", "190")).toBe(true);
+  });
+
+  it("true at exactly the min", () => {
+    expect(sellFundsCoverMin("1900", "10", "190")).toBe(true);
+    expect(sellFundsCoverMin("1900.01", "10", "190")).toBe(false);
+  });
+});
+
+describe("effectiveMaxEtb", () => {
+  it("returns the configured max when the balance covers it", () => {
+    expect(effectiveMaxEtb("10000", "73", "190")).toBe("10000");
+  });
+
+  it("caps at what the balance funds when the max is too high", () => {
+    // 100,000 ETB max on 73 USDT at 190 → capped to the 13,870 ETB the balance funds.
+    expect(effectiveMaxEtb("100000", "73", "190")).toBe("13870");
+  });
+
+  it("collapses toward the reported dead-ad case", () => {
+    // 0.161402 USDT at 190 → 30.66 ETB effective max, far under a 75,000 ETB ad max.
+    expect(effectiveMaxEtb("75000", "0.161402", "190")).toBe("30.66");
   });
 });
