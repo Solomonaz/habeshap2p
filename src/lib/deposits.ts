@@ -4,7 +4,11 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 import { getServerEnv } from "@/lib/env";
 import { getChainProvider } from "@/lib/chain";
-import { getSweepStrategy, getPooledDepositAddress } from "@/lib/settings";
+import {
+  getSweepStrategy,
+  getPooledDepositAddress,
+  getPooledScanFrom,
+} from "@/lib/settings";
 import { createNotification, notifyAdmins } from "@/lib/notifications";
 import { formatUsdt } from "@/lib/money";
 
@@ -179,17 +183,54 @@ export async function pollDeposits(): Promise<DepositPollResult> {
  * single shared address and attributes each to a user by EXACT AMOUNT via
  * credit_pooled_deposit, which finds the matching PENDING intent, credits that
  * user (idempotent on tx hash), and marks the intent MATCHED.
+ *
+ * Two guards keep a strategy switch clean (migration 0058) so pre-pooled history is
+ * never mistaken for a new deposit:
+ *   1. CUTOVER FLOOR — only transfers at/after `pooled_scan_from` (when pooled mode
+ *      became active) are scanned. Everything before the switch is out of scope.
+ *   2. OWN-ADDRESS FILTER — a transfer whose SENDER is one of our own addresses (the
+ *      hot wallet, the pooled address, or any user's derived deposit address) is a
+ *      sweep / internal move, never a user deposit — skip it entirely.
  */
 async function pollPooledDeposits(
   admin: ReturnType<typeof createAdminSupabase>,
 ): Promise<DepositPollResult> {
   const pooledAddress = await resolvePooledAddress();
   const provider = await getChainProvider();
-  const transfers = await provider.fetchIncomingTransfers([pooledAddress]);
+
+  // Cutover floor: ignore anything on-chain before pooled mode began.
+  const scanFrom = await getPooledScanFrom();
+  const sinceMs = scanFrom ? Date.parse(scanFrom) : undefined;
+
+  // Our own addresses — a transfer FROM any of these is an internal move (a sweep
+  // from a derived address, or the hot wallet moving its own funds), not a deposit.
+  const ownAddresses = new Set<string>([pooledAddress]);
+  const { TRON_HOT_WALLET_ADDRESS } = getServerEnv();
+  if (TRON_HOT_WALLET_ADDRESS) ownAddresses.add(TRON_HOT_WALLET_ADDRESS);
+  const { data: derived } = await admin
+    .from("wallets")
+    .select("deposit_address")
+    .not("deposit_address", "is", null);
+  for (const w of derived ?? []) {
+    if (w.deposit_address) ownAddresses.add(w.deposit_address);
+  }
+
+  const transfers = await provider.fetchIncomingTransfers([pooledAddress], {
+    sinceMs: Number.isFinite(sinceMs) ? sinceMs : undefined,
+  });
 
   let credited = 0;
   let unmatched = 0;
   for (const t of transfers) {
+    // Never treat our own outbound/internal transfer as a user deposit.
+    if (t.fromAddress && ownAddresses.has(t.fromAddress)) {
+      console.info(
+        `[deposits] skipping internal transfer (own sender ${t.fromAddress.slice(0, 8)}…) ` +
+          `tx=${t.txHash} ${t.amountUsdt} USDT`,
+      );
+      continue;
+    }
+
     const { data: status, error: cErr } = await admin.rpc(
       "credit_pooled_deposit",
       { p_tx_hash: t.txHash, p_amount: t.amountUsdt },

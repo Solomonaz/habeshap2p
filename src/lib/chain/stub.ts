@@ -5,6 +5,7 @@ import type { TronNetwork } from "./config";
 import type {
   ChainProvider,
   EnergySnapshot,
+  FetchTransfersOptions,
   HotWalletReserve,
   IncomingTransfer,
   SendResult,
@@ -43,6 +44,7 @@ export class StubChainProvider implements ChainProvider {
 
   async fetchIncomingTransfers(
     _addresses: string[],
+    _opts?: FetchTransfersOptions,
   ): Promise<IncomingTransfer[]> {
     // No real chain to read — the poller credits nothing under the stub.
     return [];

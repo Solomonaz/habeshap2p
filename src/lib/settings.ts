@@ -44,6 +44,7 @@ type SettingsRow = {
   referral_max_trades: number | null;
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
+  pooled_scan_from: string | null;
 };
 
 const SETTINGS_COLUMNS =
@@ -52,7 +53,7 @@ const SETTINGS_COLUMNS =
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
   "release_window_minutes, withdrawal_fee_usdt, seller_fee_bps, " +
   "internal_transfer_fee_usdt, referral_bps, referral_max_trades, " +
-  "sweep_strategy, pooled_deposit_address";
+  "sweep_strategy, pooled_deposit_address, pooled_scan_from";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -486,6 +487,18 @@ export async function getSweepStrategy(): Promise<SweepStrategy> {
 export async function getPooledDepositAddress(): Promise<string | null> {
   const row = await getSettingsRow();
   return row?.pooled_deposit_address ?? null;
+}
+
+/**
+ * The pooled-deposit scan floor (migration 0058) — the instant pooled mode became
+ * active. The pooled poller ignores every on-chain transfer before this, so
+ * switching INTO pooled mode never resurfaces pre-pooled history (burn/staking
+ * sweeps, old test sends) as unmatched deposits. Null (no floor) means "scan all"
+ * — the pre-0058 behaviour; the migration backfills a floor for live pooled mode.
+ */
+export async function getPooledScanFrom(): Promise<string | null> {
+  const row = await getSettingsRow();
+  return row?.pooled_scan_from ?? null;
 }
 
 /**

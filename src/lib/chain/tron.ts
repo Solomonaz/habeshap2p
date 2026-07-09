@@ -7,6 +7,7 @@ import { DEPOSIT_MIN_CONFIRMATIONS } from "./config";
 import type {
   ChainProvider,
   EnergySnapshot,
+  FetchTransfersOptions,
   HotWalletReserve,
   IncomingTransfer,
   SendResult,
@@ -173,9 +174,17 @@ export class TronGridChainProvider implements ChainProvider {
 
   async fetchIncomingTransfers(
     addresses: string[],
+    opts?: FetchTransfersOptions,
   ): Promise<IncomingTransfer[]> {
     const out: IncomingTransfer[] = [];
     const nowBlock = await this.currentBlock();
+    // Cutover watermark (pooled mode): ask TronGrid only for transfers at/after the
+    // scan floor, so pre-pooled history (burn/staking sweeps, old test sends) is
+    // never even returned — let alone flagged unmatched.
+    const sinceParam =
+      opts?.sinceMs && opts.sinceMs > 0
+        ? `&min_timestamp=${Math.floor(opts.sinceMs)}`
+        : "";
 
     for (const address of addresses) {
       // Resilience: a single bad address (e.g. a malformed/legacy address that
@@ -186,7 +195,8 @@ export class TronGridChainProvider implements ChainProvider {
         // Inbound TRC-20 transfers of our USDT contract to this address.
         const resp = await this.api<TronGridTrc20Response>(
           `/v1/accounts/${address}/transactions/trc20` +
-            `?only_to=true&limit=50&contract_address=${this.usdtContract}`,
+            `?only_to=true&limit=50&contract_address=${this.usdtContract}` +
+            sinceParam,
         );
         for (const t of resp.data ?? []) {
           if (!t.transaction_id || !t.value) continue;
@@ -198,6 +208,7 @@ export class TronGridChainProvider implements ChainProvider {
           const decimals = t.token_info?.decimals ?? 6;
           out.push({
             txHash: t.transaction_id,
+            fromAddress: t.from,
             toAddress: t.to ?? address,
             amountUsdt: baseUnitsToDecimal(t.value, decimals),
           });
@@ -715,6 +726,7 @@ type TronWebClass = {
 type TronGridTrc20Response = {
   data?: {
     transaction_id?: string;
+    from?: string;
     to?: string;
     value?: string;
     token_info?: { decimals?: number };

@@ -21,8 +21,19 @@ export type IncomingTransfer = {
   txHash: string;
   /** The deposit address the funds arrived at (maps back to a user). */
   toAddress: string;
+  /** The SENDER address. Lets the pooled poller ignore transfers from our own
+   * addresses (sweeps / internal moves are never user deposits). May be undefined
+   * if the provider can't report it. */
+  fromAddress?: string;
   /** Amount in USDT as an exact decimal string (never a float). */
   amountUsdt: string;
+};
+
+/** Optional bounds for a transfer scan. */
+export type FetchTransfersOptions = {
+  /** Ignore transfers with a block timestamp before this (epoch ms). Used for the
+   * pooled cutover watermark so switching strategies never resurfaces old history. */
+  sinceMs?: number;
 };
 
 export type SendResult = { txHash: string };
@@ -87,9 +98,13 @@ export interface ChainProvider {
   /**
    * Return confirmed inbound USDT transfers to any of the given deposit
    * addresses. Implementations should only return transfers past the required
-   * confirmation depth; crediting is idempotent on txHash regardless.
+   * confirmation depth; crediting is idempotent on txHash regardless. `opts.sinceMs`
+   * bounds the scan to transfers at/after an epoch-ms instant (the pooled cutover).
    */
-  fetchIncomingTransfers(addresses: string[]): Promise<IncomingTransfer[]>;
+  fetchIncomingTransfers(
+    addresses: string[],
+    opts?: FetchTransfersOptions,
+  ): Promise<IncomingTransfer[]>;
 
   /**
    * Sign and broadcast a TRC-20 USDT transfer from the hot wallet to a

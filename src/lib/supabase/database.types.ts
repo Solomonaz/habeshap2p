@@ -523,6 +523,10 @@ export type Database = {
           // shared omnibus address override (null ⇒ use the hot-wallet address).
           sweep_strategy: string;
           pooled_deposit_address: string | null;
+          // The instant pooled deposit scanning started (migration 0058). The
+          // pooled poller ignores every on-chain transfer before this, so switching
+          // into pooled mode never resurfaces pre-pooled history as unmatched.
+          pooled_scan_from: string | null;
           updated_by: string | null;
           updated_at: string;
         };
