@@ -38,7 +38,22 @@ export default async function AdminOverviewPage() {
     reserveUsdt != null
       ? toMicros(reserveUsdt) - toMicros(stats.liabilities)
       : null;
-  const surplus = surplusMicros != null ? fromMicros(surplusMicros) : null;
+  // A deficit (liabilities > reserve) is a legitimate state — e.g. in test mode
+  // balances are faucet-granted and aren't backed by the on-chain float. fromMicros
+  // rejects negatives on purpose (a real balance must never go negative), so format
+  // the magnitude and carry the sign ourselves rather than crashing the page.
+  const surplusNegative = surplusMicros != null && surplusMicros < 0n;
+  const surplus =
+    surplusMicros != null
+      ? formatUsdt(
+          fromMicros(surplusMicros < 0n ? -surplusMicros : surplusMicros),
+        )
+      : null;
+
+  // Net income can also be negative (referral payouts exceeding fees). Same guard.
+  const netStr = String(income.net).trim();
+  const netNegative = netStr.startsWith("-");
+  const netMagnitude = formatUsdt(netNegative ? netStr.slice(1) : netStr);
 
   const incomeSources = [
     { label: "Trade fees", value: income.tradeFees, hint: "buyer + seller %" },
@@ -112,8 +127,14 @@ export default async function AdminOverviewPage() {
               <h2 className="text-sm font-medium text-ink-muted">
                 Net income (your earnings)
               </h2>
-              <p className="mt-1 font-amount text-3xl text-state-released">
-                {formatUsdt(income.net)} USDT
+              <p
+                className={
+                  "mt-1 font-amount text-3xl " +
+                  (netNegative ? "text-sell" : "text-state-released")
+                }
+              >
+                {netNegative ? "−" : ""}
+                {netMagnitude} USDT
               </p>
               <p className="mt-1 text-xs text-ink-faint">
                 All fees collected, minus referral payouts. Held in the platform
@@ -126,10 +147,11 @@ export default async function AdminOverviewPage() {
                 <p
                   className={
                     "mt-0.5 font-amount text-lg " +
-                    (Number(surplus) >= 0 ? "text-ink" : "text-sell")
+                    (surplusNegative ? "text-sell" : "text-ink")
                   }
                 >
-                  {formatUsdt(surplus)} USDT
+                  {surplusNegative ? "−" : ""}
+                  {surplus} USDT
                 </p>
                 <p className="text-[11px] text-ink-faint">reserve − liabilities</p>
               </div>
