@@ -100,7 +100,7 @@ export function TradeForm({
           <div className="flex justify-between">
             <dt className="text-ink-muted">Available now</dt>
             <dd className="font-amount text-ink-soft">
-              {formatUsdt(String(maxUsdt))} USDT
+              {formatUsdt(maxUsdt.toFixed(2))} USDT
             </dd>
           </div>
         )}
@@ -185,7 +185,7 @@ export function TradeForm({
           )}
           {overSellerMax && !overLimit && (
             <span className="mt-1 block text-xs text-sell">
-              Only {formatUsdt(String(maxUsdt))} USDT is available from this
+              Only {formatUsdt(maxUsdt.toFixed(2))} USDT is available from this
               seller right now — lower the amount.
             </span>
           )}
