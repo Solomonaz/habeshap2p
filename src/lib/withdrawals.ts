@@ -4,9 +4,49 @@ import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 import { toMicros, fromMicros, formatUsdt } from "@/lib/money";
 import { getChainProvider, WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
-import { getWithdrawalFee } from "@/lib/settings";
+import { getWithdrawalFee, getPooledDepositAddress } from "@/lib/settings";
+import { getServerEnv } from "@/lib/env";
 import { createNotification } from "@/lib/notifications";
 import { isValidTronAddress } from "@/lib/chain/address";
+
+/**
+ * Reject a withdrawal aimed at one of OUR OWN custody addresses. In pooled deposit
+ * mode the address shown to users IS the hot wallet, so it's an easy and costly
+ * mistake to paste your "deposit address" as the payout destination: the signer
+ * then broadcasts a self-transfer from the hot wallet straight back to itself (or
+ * to a platform-controlled derived address that gets swept back), the on-chain
+ * transfer SUCCEEDS, the user's balance is debited + the fee taken — but no USDT
+ * ever leaves custody, so the user's real wallet receives nothing. Block it before
+ * any funds are held. Tron base58 addresses are case-sensitive, so exact match.
+ */
+async function assertExternalDestination(
+  supabase: ReturnType<typeof createAdminSupabase>,
+  userId: string,
+  toAddress: string,
+): Promise<void> {
+  const dest = toAddress.trim();
+  const forbidden = new Set<string>();
+  const { TRON_HOT_WALLET_ADDRESS } = getServerEnv();
+  if (TRON_HOT_WALLET_ADDRESS) forbidden.add(TRON_HOT_WALLET_ADDRESS.trim());
+  const pooled = await getPooledDepositAddress();
+  if (pooled) forbidden.add(pooled.trim());
+  // The user's OWN derived deposit address is platform-controlled too — funds sent
+  // there would just be swept back into custody. Block it as well.
+  const { data: wallet } = await supabase
+    .from("wallets")
+    .select("deposit_address")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (wallet?.deposit_address) forbidden.add(wallet.deposit_address.trim());
+
+  if (forbidden.has(dest)) {
+    throw new Error(
+      "That's a HabeshaP2P deposit address, not an external wallet. Withdraw to " +
+        "an address you control on another wallet or exchange — never the address " +
+        "you deposit to, or the funds return to us and can't reach you.",
+    );
+  }
+}
 
 export type WithdrawalRow = Database["public"]["Tables"]["withdrawals"]["Row"];
 
@@ -47,6 +87,10 @@ export async function requestWithdrawal(args: {
   if (!isValidTronAddress(args.toAddress)) {
     throw new Error("enter a valid Tron (TRC-20) address");
   }
+  const supabase = createAdminSupabase();
+  // Never pay out to one of our own custody/deposit addresses (self-transfer that
+  // debits the user but delivers nothing). Checked before funds are held.
+  await assertExternalDestination(supabase, args.userId, args.toAddress);
   // Fee-on-top model: the user enters the amount they want to SEND, and the fee
   // is charged on top — so the full amount reaches the destination and the user
   // must have (send + fee) in their balance. We hold that GROSS on the row as
@@ -62,7 +106,6 @@ export async function requestWithdrawal(args: {
   // here so the admin notification fires on exactly the same withdrawals.
   const needsApproval =
     grossMicros >= toMicros(String(WITHDRAWAL_APPROVAL_THRESHOLD));
-  const supabase = createAdminSupabase();
   const { data, error } = await supabase.rpc("withdrawal_request", {
     p_user: args.userId,
     p_to_address: args.toAddress,

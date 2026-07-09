@@ -88,13 +88,17 @@ function AdRowItem({ ad }: { ad: MyAdRow }) {
         </div>
 
         <div className="flex shrink-0 flex-col items-end gap-2">
-          {ad.status !== "CLOSED" && (
+          {/* Single edit entry point: when underfunded, the amber warning below
+              carries "Update limits", and while editing the form has its own
+              Cancel — so this standalone button would only ever duplicate one of
+              them. Show it just for a funded ad that isn't already being edited. */}
+          {ad.status !== "CLOSED" && !underfunded && !editing && (
             <button
               type="button"
-              onClick={() => setEditing((v) => !v)}
+              onClick={() => setEditing(true)}
               className="rounded-md border border-paper-border px-3 py-1.5 text-sm text-ink-soft transition-colors hover:bg-paper-sunken"
             >
-              {editing ? "Cancel" : "Edit limits"}
+              Edit limits
             </button>
           )}
           {ad.status !== "CLOSED" && (

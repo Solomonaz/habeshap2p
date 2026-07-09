@@ -85,6 +85,13 @@ export function WithdrawForm({
             spellCheck={false}
             className="mt-1 w-full rounded-md border border-paper-border bg-paper px-3 py-2 font-amount text-sm text-ink focus:border-amber focus:outline-none"
           />
+          <p className="mt-1 text-xs text-amber">
+            Use an EXTERNAL wallet or exchange address you control — never your
+            HabeshaP2P deposit address, or the funds return to us and can&apos;t
+            reach you. Sending to another HabeshaP2P user? Use{" "}
+            <span className="font-semibold">Send</span> (by their HabeshaP2P ID)
+            instead — it&apos;s instant and free of on-chain fees.
+          </p>
         </div>
         <div className="flex items-end gap-2">
           <div className="flex-1">

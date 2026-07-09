@@ -26,11 +26,15 @@ export async function SiteHeader({
   active,
   userId,
   isAdmin,
+  hideFab,
 }: {
   account?: AccountIdentity | null;
   active?: Page;
   userId?: string;
   isAdmin?: boolean;
+  /** Hide the floating "post an ad" button — e.g. on the order page, whose chat
+   * composer sits where the FAB would float and collide with the Send button. */
+  hideFab?: boolean;
 }) {
   // One profile read serves two needs: the display name (we greet by the real
   // name, not the login email) and — when the caller didn't already resolve it —
@@ -138,7 +142,7 @@ export async function SiteHeader({
 
     {/* Mobile app-shell: bottom tab bar + floating post button (md-). */}
     {userId && <BottomNav active={active} />}
-    {userId && <PostAdFab />}
+    {userId && !hideFab && <PostAdFab />}
     </>
   );
 }
