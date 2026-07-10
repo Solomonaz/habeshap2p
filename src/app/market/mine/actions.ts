@@ -56,10 +56,21 @@ const etbAmount = z
   .regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter a valid amount")
   .refine((v) => Number(v) > 0, "Must be greater than zero");
 
+/**
+ * The price (rate) is stored with up to 4 decimals and comes back that way (e.g.
+ * "210.0000"), so its field allows 4 fractional digits — the 2-decimal `etbAmount`
+ * would reject the value the form pre-fills from the ad.
+ */
+const rateEtb = z
+  .string()
+  .trim()
+  .regex(/^\d{1,12}(\.\d{1,4})?$/, "Enter a valid price")
+  .refine((v) => Number(v) > 0, "Must be greater than zero");
+
 const limitsSchema = z
   .object({
     adId: z.string().uuid(),
-    rate_etb: etbAmount,
+    rate_etb: rateEtb,
     min_etb: etbAmount,
     max_etb: etbAmount,
   })

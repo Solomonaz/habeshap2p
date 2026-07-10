@@ -14,10 +14,17 @@ const etbAmount = z
   .regex(/^\d{1,12}(\.\d{1,2})?$/, "Enter a valid amount")
   .refine((v) => Number(v) > 0, "Must be greater than zero");
 
+/** The price (rate) carries up to 4 decimals; ETB amounts (min/max) only 2. */
+const rateEtb = z
+  .string()
+  .trim()
+  .regex(/^\d{1,12}(\.\d{1,4})?$/, "Enter a valid price")
+  .refine((v) => Number(v) > 0, "Must be greater than zero");
+
 const createAdSchema = z
   .object({
     side: z.enum(AD_SIDES),
-    rate_etb: etbAmount,
+    rate_etb: rateEtb,
     min_etb: etbAmount,
     max_etb: etbAmount,
     payment_methods: z
