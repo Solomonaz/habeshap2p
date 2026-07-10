@@ -18,9 +18,12 @@ import { openOrder, type OpenOrderState } from "./actions";
 export function TradeForm({
   ad,
   takerLimit,
+  buyerName,
 }: {
   ad: AdWithPoster;
   takerLimit: number | null;
+  /** The buyer's verified/registered name, pre-filled so they don't re-enter it. */
+  buyerName: string;
 }) {
   const [state, formAction, pending] = useActionState<OpenOrderState, FormData>(
     openOrder,
@@ -233,12 +236,20 @@ export function TradeForm({
                 type="text"
                 name="buyer_payment_name"
                 autoComplete="name"
+                defaultValue={buyerName}
+                readOnly={!!buyerName}
                 placeholder="Full name on your Telebirr / bank account"
-                className="mt-1 w-full rounded-md border border-paper-border bg-paper-sunken px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber"
+                className={
+                  "mt-1 w-full rounded-md border border-paper-border px-3 py-2 text-ink placeholder:text-ink-faint focus:border-amber " +
+                  (buyerName
+                    ? "cursor-default bg-paper text-ink-soft"
+                    : "bg-paper-sunken")
+                }
               />
               <span className="mt-1 block text-xs text-ink-faint">
-                The seller will release only if the ETB arrives from this exact
-                name.
+                {buyerName
+                  ? "Your verified name. Pay from an account in this name so the seller can release."
+                  : "The seller will release only if the ETB arrives from this exact name."}
               </span>
             </label>
 

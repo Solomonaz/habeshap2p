@@ -19,6 +19,9 @@ function useCountdown(expiresAt: string, active: boolean) {
   );
   useEffect(() => {
     if (!active) return;
+    // Snap to the current value at once (so a new deadline after a refresh shows
+    // immediately), then tick every second.
+    setRemaining(Math.max(0, new Date(expiresAt).getTime() - Date.now()));
     const id = setInterval(() => {
       setRemaining(Math.max(0, new Date(expiresAt).getTime() - Date.now()));
     }, 1000);
@@ -71,6 +74,30 @@ export function OrderControls({
   const [sellerReplied, setSellerReplied] = useState(sellerHasResponded);
   const needsChatGate = isBuyer && state === "CREATED" && !sellerReplied;
   const supabase = useMemo(() => createClient(), []);
+
+  // Keep BOTH parties' views live. When the order row changes — the buyer marks
+  // paid (state → PAID + a fresh release deadline), the seller releases, a dispute
+  // opens — refresh the page so each side re-renders with the new state and the
+  // countdown restarts on the right clock, without anyone having to hit reload.
+  // (orders is in the realtime publication; RLS scopes events to the two parties.)
+  useEffect(() => {
+    const channel = supabase
+      .channel(`order-sync-${orderId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+          filter: `id=eq.${orderId}`,
+        },
+        () => router.refresh(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [supabase, orderId, router]);
   useEffect(() => {
     if (!needsChatGate) return;
     const channel = supabase

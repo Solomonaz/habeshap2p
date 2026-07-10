@@ -31,7 +31,7 @@ export default async function TradePage({
     fetchAd(supabase, adId),
     supabase
       .from("users")
-      .select("is_merchant, completed_trades")
+      .select("is_merchant, completed_trades, full_name")
       .eq("id", user.id)
       .single(),
     getTradePolicy(),
@@ -68,7 +68,11 @@ export default async function TradePage({
             .
           </p>
         ) : (
-          <TradeForm ad={ad} takerLimit={takerLimit} />
+          <TradeForm
+            ad={ad}
+            takerLimit={takerLimit}
+            buyerName={profile?.full_name ?? ""}
+          />
         )}
 
         <TradeGuide />
