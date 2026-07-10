@@ -7,6 +7,7 @@ import { tradeLimitUsdt } from "@/lib/reputation";
 import { getTradePolicy } from "@/lib/settings";
 import { SiteHeader } from "@/components/site-header";
 import { accountLabel } from "@/lib/identity";
+import { TradeGuide } from "@/components/guides";
 import { TradeForm } from "./trade-form";
 
 export default async function TradePage({
@@ -69,6 +70,8 @@ export default async function TradePage({
         ) : (
           <TradeForm ad={ad} takerLimit={takerLimit} />
         )}
+
+        <TradeGuide />
       </main>
     </>
   );

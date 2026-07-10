@@ -30,6 +30,7 @@ import { InternalTransferForm } from "./internal-transfer-form";
 import { ReferralPanel } from "./referral-panel";
 import { PooledDeposit } from "./pooled-deposit";
 import { AccountTabs, type AccountTab } from "./account-tabs";
+import { DepositGuide, SendGuide, WithdrawGuide } from "@/components/guides";
 import { devFaucet } from "./actions";
 
 // Compact tab icons for the account workspace.
@@ -243,6 +244,7 @@ export default async function DashboardPage() {
               </p>
             </section>
           )}
+          <DepositGuide />
         </div>
       ),
     },
@@ -251,11 +253,14 @@ export default async function DashboardPage() {
       label: "Send",
       icon: IconSend,
       content: (
-        <InternalTransferForm
-          available={available}
-          myPublicId={myPublicId}
-          fee={transferFee}
-        />
+        <div className="space-y-4">
+          <InternalTransferForm
+            available={available}
+            myPublicId={myPublicId}
+            fee={transferFee}
+          />
+          <SendGuide />
+        </div>
       ),
     },
     {
@@ -270,6 +275,7 @@ export default async function DashboardPage() {
             approvalThreshold={approvalThreshold}
             fee={withdrawalFee}
           />
+          <WithdrawGuide />
           {withdrawals.length > 0 && (
             <section className="rounded-card border border-paper-border bg-paper-raised p-5">
               <h2 className="text-sm font-medium text-ink">Withdrawal history</h2>
