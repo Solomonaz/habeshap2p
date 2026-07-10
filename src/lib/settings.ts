@@ -3,6 +3,7 @@ import { cache } from "react";
 import { unstable_cache, revalidateTag } from "next/cache";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import { DEFAULT_TRADE_POLICY, type TradePolicy } from "@/lib/reputation";
+import { DEFAULT_WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain/config";
 
 /**
  * `platform_settings` is a single-row table read by almost every page (the live
@@ -45,6 +46,7 @@ type SettingsRow = {
   sweep_strategy: string | null;
   pooled_deposit_address: string | null;
   pooled_scan_from: string | null;
+  withdrawal_approval_threshold: string | null;
 };
 
 const SETTINGS_COLUMNS =
@@ -53,7 +55,8 @@ const SETTINGS_COLUMNS =
   "tier_active_trades, tier_established_trades, order_ttl_minutes, " +
   "release_window_minutes, withdrawal_fee_usdt, seller_fee_bps, " +
   "internal_transfer_fee_usdt, referral_bps, referral_max_trades, " +
-  "sweep_strategy, pooled_deposit_address, pooled_scan_from";
+  "sweep_strategy, pooled_deposit_address, pooled_scan_from, " +
+  "withdrawal_approval_threshold";
 
 let lastKnownRow: SettingsRow | null = null;
 
@@ -348,6 +351,39 @@ export async function setWithdrawalFee(
   const { error } = await admin.rpc("set_withdrawal_fee", {
     p_admin: adminId,
     p_fee: feeUsdt,
+  });
+  if (error) throw new Error(error.message);
+  revalidateTag("platform-settings");
+}
+
+/** Re-exported so callers have one import site for the fallback default. */
+export { DEFAULT_WITHDRAWAL_APPROVAL_THRESHOLD };
+
+/**
+ * The withdrawal approval threshold in USDT (migration 0060) — a withdrawal whose
+ * total (amount + fee) is at or above this needs admin sign-off before it's sent;
+ * below it, it auto-approves. Admin-configurable from the console. FAIL-SAFE: any
+ * read error returns the built-in default, so a hiccup can never silently let large
+ * withdrawals through without review.
+ */
+export async function getWithdrawalApprovalThreshold(): Promise<number> {
+  const row = await getSettingsRow();
+  const raw = row?.withdrawal_approval_threshold;
+  const n = raw == null ? NaN : Number(raw);
+  return Number.isFinite(n) && n >= 0
+    ? n
+    : DEFAULT_WITHDRAWAL_APPROVAL_THRESHOLD;
+}
+
+/** Set the withdrawal approval threshold (USDT). Admin-gated in SQL. */
+export async function setWithdrawalApprovalThreshold(
+  adminId: string,
+  threshold: string,
+): Promise<void> {
+  const admin = createAdminSupabase();
+  const { error } = await admin.rpc("set_withdrawal_approval_threshold", {
+    p_admin: adminId,
+    p_threshold: threshold,
   });
   if (error) throw new Error(error.message);
   revalidateTag("platform-settings");

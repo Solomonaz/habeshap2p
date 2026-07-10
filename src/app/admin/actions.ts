@@ -25,6 +25,7 @@ import {
   setOrderTtlMinutes,
   setReleaseWindowMinutes,
   setWithdrawalFee,
+  setWithdrawalApprovalThreshold,
   setSellerFee,
   setInternalTransferFee,
   setReferralBps,
@@ -991,6 +992,66 @@ export async function setWithdrawalFeeAction(
     action: "withdrawal_fee_set",
     targetType: "platform_settings",
     detail: `withdrawal fee ${parsed.data.fee} USDT`,
+  });
+
+  revalidatePath("/admin/settings");
+  return { ok: true };
+}
+
+const approvalThresholdSchema = z.object({
+  threshold: z
+    .string()
+    .trim()
+    .refine(
+      (s) => /^\d+(\.\d{1,6})?$/.test(s) && Number(s) >= 0,
+      "Enter a non-negative USDT amount (up to 6 decimals)",
+    )
+    .refine((s) => Number(s) <= 1_000_000, "Threshold can't exceed 1,000,000 USDT"),
+});
+
+export type ApprovalThresholdState = { error?: string; ok?: boolean };
+
+/**
+ * Admin sets the withdrawal approval threshold (migration 0060) — a withdrawal
+ * whose total (amount + fee) is at or above this needs admin sign-off before the
+ * signer broadcasts it; below it, it auto-approves. requestWithdrawal reads this
+ * live, so a new value applies to withdrawals requested after the change. Same
+ * triple authorization as every other admin action.
+ */
+export async function setWithdrawalApprovalThresholdAction(
+  _prev: ApprovalThresholdState,
+  formData: FormData,
+): Promise<ApprovalThresholdState> {
+  const parsed = approvalThresholdSchema.safeParse({
+    threshold: formData.get("threshold") ?? "",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid request" };
+  }
+
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (!(await isAdmin(supabase, user.id))) {
+    return { error: "Not authorized" };
+  }
+
+  try {
+    await setWithdrawalApprovalThreshold(user.id, parsed.data.threshold);
+  } catch (e) {
+    return {
+      error:
+        e instanceof Error ? e.message : "Could not set the approval threshold",
+    };
+  }
+
+  await recordAdminAction({
+    adminId: user.id,
+    action: "withdrawal_approval_threshold_set",
+    targetType: "platform_settings",
+    detail: `approval threshold ${parsed.data.threshold} USDT`,
   });
 
   revalidatePath("/admin/settings");

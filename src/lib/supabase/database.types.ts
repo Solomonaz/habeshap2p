@@ -527,6 +527,9 @@ export type Database = {
           // pooled poller ignores every on-chain transfer before this, so switching
           // into pooled mode never resurfaces pre-pooled history as unmatched.
           pooled_scan_from: string | null;
+          // Withdrawals with amount + fee >= this (USDT) need admin approval
+          // (migration 0060). Admin-configurable; 0 = review every withdrawal.
+          withdrawal_approval_threshold: string;
           updated_by: string | null;
           updated_at: string;
         };
@@ -761,6 +764,10 @@ export type Database = {
       };
       set_withdrawal_fee: {
         Args: { p_admin: string; p_fee: string };
+        Returns: undefined;
+      };
+      set_withdrawal_approval_threshold: {
+        Args: { p_admin: string; p_threshold: string };
         Returns: undefined;
       };
       set_seller_fee: {

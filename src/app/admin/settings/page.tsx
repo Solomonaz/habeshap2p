@@ -8,6 +8,7 @@ import {
   getOrderTtlMinutes,
   getReleaseWindowMinutes,
   getWithdrawalFee,
+  getWithdrawalApprovalThreshold,
   getSellerFeeBps,
   getInternalTransferFee,
   getReferralBps,
@@ -23,6 +24,7 @@ import { TradePolicyForm } from "./trade-policy-form";
 import { OrderWindowForm } from "./order-window-form";
 import { ReleaseWindowForm } from "./release-window-form";
 import { WithdrawalFeeForm } from "./withdrawal-fee-form";
+import { WithdrawalApprovalForm } from "./withdrawal-approval-form";
 import { TransferFeeForm } from "./transfer-fee-form";
 import { ReferralForm } from "./referral-form";
 import { SweepStrategyForm } from "./sweep-strategy-form";
@@ -76,6 +78,7 @@ export default async function AdminSettingsPage() {
     orderTtl,
     releaseWindow,
     withdrawalFee,
+    approvalThreshold,
     sellerFeeBps,
     transferFee,
     referralBps,
@@ -91,6 +94,7 @@ export default async function AdminSettingsPage() {
     getOrderTtlMinutes(),
     getReleaseWindowMinutes(),
     getWithdrawalFee(),
+    getWithdrawalApprovalThreshold(),
     getSellerFeeBps(),
     getInternalTransferFee(),
     getReferralBps(),
@@ -141,6 +145,7 @@ export default async function AdminSettingsPage() {
             <WithdrawalFeeForm fee={withdrawalFee} />
             <TransferFeeForm fee={transferFee} />
           </div>
+          <WithdrawalApprovalForm threshold={approvalThreshold} />
         </>
       ),
     },

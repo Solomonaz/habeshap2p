@@ -23,15 +23,13 @@ export const TRON_NETWORK_LABEL: Record<TronNetwork, string> = {
 };
 
 /**
- * Withdrawals of this many USDT or more require an admin to approve before the
- * signer will broadcast them. The SQL (`withdrawal_request`) is authoritative —
- * it receives this value and sets PENDING_APPROVAL vs APPROVED — but the constant
- * lives here so the UI can warn the user up front. KEEP IN SYNC with the value
- * passed to withdrawal_request.
+ * Fallback withdrawal approval threshold (USDT). The live value is admin-configured
+ * in platform_settings (migration 0060) and read via getWithdrawalApprovalThreshold;
+ * this constant is only the fail-safe default when that read can't happen (and the
+ * SQL column's default). Withdrawals whose total (amount + fee) is at or above the
+ * threshold need admin sign-off before the signer broadcasts them.
  */
-export const WITHDRAWAL_APPROVAL_THRESHOLD = Number(
-  process.env.WITHDRAWAL_APPROVAL_THRESHOLD ?? 500,
-);
+export const DEFAULT_WITHDRAWAL_APPROVAL_THRESHOLD = 500;
 
 /** Number of on-chain confirmations a deposit needs before we credit it. */
 export const DEPOSIT_MIN_CONFIRMATIONS = Number(
@@ -41,7 +39,7 @@ export const DEPOSIT_MIN_CONFIRMATIONS = Number(
 /** Pure predicate mirroring the SQL gate: does this amount need admin approval? */
 export function needsApproval(
   amountUsdt: number,
-  threshold: number = WITHDRAWAL_APPROVAL_THRESHOLD,
+  threshold: number = DEFAULT_WITHDRAWAL_APPROVAL_THRESHOLD,
 ): boolean {
   return amountUsdt >= threshold;
 }

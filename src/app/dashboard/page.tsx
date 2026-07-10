@@ -6,7 +6,6 @@ import {
   TRON_NETWORK,
   TRON_NETWORK_LABEL,
   DEPOSIT_MIN_CONFIRMATIONS,
-  WITHDRAWAL_APPROVAL_THRESHOLD,
 } from "@/lib/chain";
 import { ensureDepositAddress } from "@/lib/deposits";
 import { fetchWithdrawalsForUser } from "@/lib/withdrawals";
@@ -15,6 +14,7 @@ import {
   getTradePolicy,
   getSweepStrategy,
   getWithdrawalFee,
+  getWithdrawalApprovalThreshold,
   getInternalTransferFee,
   getReferralBps,
   getReferralMaxTrades,
@@ -108,6 +108,7 @@ export default async function DashboardPage() {
     tradePolicy,
     sweepStrategy,
     withdrawalFee,
+    approvalThreshold,
     transferFee,
     referralBps,
     referralMaxTrades,
@@ -117,6 +118,7 @@ export default async function DashboardPage() {
     getTradePolicy(),
     getSweepStrategy(),
     getWithdrawalFee(),
+    getWithdrawalApprovalThreshold(),
     getInternalTransferFee(),
     getReferralBps(),
     getReferralMaxTrades(),
@@ -265,7 +267,7 @@ export default async function DashboardPage() {
           <WithdrawForm
             available={available}
             networkLabel={TRON_NETWORK_LABEL[TRON_NETWORK]}
-            approvalThreshold={WITHDRAWAL_APPROVAL_THRESHOLD}
+            approvalThreshold={approvalThreshold}
             fee={withdrawalFee}
           />
           {withdrawals.length > 0 && (

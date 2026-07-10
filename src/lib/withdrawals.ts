@@ -3,8 +3,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 import { toMicros, fromMicros, formatUsdt } from "@/lib/money";
-import { getChainProvider, WITHDRAWAL_APPROVAL_THRESHOLD } from "@/lib/chain";
-import { getWithdrawalFee, getPooledDepositAddress } from "@/lib/settings";
+import { getChainProvider } from "@/lib/chain";
+import {
+  getWithdrawalFee,
+  getPooledDepositAddress,
+  getWithdrawalApprovalThreshold,
+} from "@/lib/settings";
 import { getServerEnv } from "@/lib/env";
 import { createNotification } from "@/lib/notifications";
 import { isValidTronAddress } from "@/lib/chain/address";
@@ -100,17 +104,19 @@ export async function requestWithdrawal(args: {
   // authoritative server-side (never trusted from the client) and is baked onto
   // the row so a later admin change can't alter an already-queued withdrawal.
   const fee = await getWithdrawalFee();
+  // The admin-configured threshold (migration 0060) is authoritative and passed to
+  // the SQL; the SQL re-derives PENDING_APPROVAL vs APPROVED from the same value.
+  const threshold = await getWithdrawalApprovalThreshold();
   const grossMicros = sendMicros + toMicros(fee);
   const gross = fromMicros(grossMicros);
-  // SQL decides PENDING_APPROVAL from the GROSS vs the threshold — mirror that
-  // here so the admin notification fires on exactly the same withdrawals.
-  const needsApproval =
-    grossMicros >= toMicros(String(WITHDRAWAL_APPROVAL_THRESHOLD));
+  // Mirror the SQL gate here so the admin notification fires on exactly the same
+  // withdrawals: PENDING when the GROSS (amount + fee) is at or above the threshold.
+  const needsApproval = grossMicros >= toMicros(String(threshold));
   const { data, error } = await supabase.rpc("withdrawal_request", {
     p_user: args.userId,
     p_to_address: args.toAddress,
     p_amount: gross,
-    p_threshold: String(WITHDRAWAL_APPROVAL_THRESHOLD),
+    p_threshold: String(threshold),
     p_fee: fee,
   });
   if (error) throw new Error(error.message);
