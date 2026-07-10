@@ -45,13 +45,17 @@ export function NotificationBell({
           setItems((prev) => {
             if (prev.some((p) => p.id === row.id)) return prev;
             
-            // Sound and haptic vibration for all incoming system/admin notifications
+            // Sound and haptic vibration for all incoming system/admin notifications.
+            // Money & order events get the long, ring-3×-plus-3s-buzz alert so they
+            // aren't missed on an idle phone; only minor events keep the soft chime.
             const type = row.type || "";
             if (
               type.includes("credited") ||
               type.includes("approved") ||
               type.includes("reinstated") ||
-              type.includes("confirmed")
+              type.includes("confirmed") ||
+              type.includes("released") ||
+              type.includes("sent")
             ) {
               soundEffects.playSuccessChime();
             } else if (
@@ -59,7 +63,9 @@ export function NotificationBell({
               type.includes("rejected") ||
               type.includes("failed") ||
               type.includes("banned") ||
-              type.includes("frozen")
+              type.includes("frozen") ||
+              type.includes("paid") ||
+              type.includes("dispute")
             ) {
               soundEffects.playAlertChime();
             } else {

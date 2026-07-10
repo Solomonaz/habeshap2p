@@ -72,71 +72,64 @@ class SoundEffects {
     }
   }
 
-  /** Triumphant double-chime for Escrow Release or completed trades */
+  /** Triumphant, repeated ring for money received / a completed trade. */
   public playSuccessChime() {
     if (!this.enabled) return;
-    this.triggerHaptic([40, 60, 40]);
-
-    const ctx = this.getContext();
-    if (!ctx) return;
-
-    try {
-      const now = ctx.currentTime;
-      // First note: G5
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = "triangle";
-      osc1.frequency.setValueAtTime(783.99, now);
-      gain1.gain.setValueAtTime(0.2, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.2);
-
-      // Second note: C6
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.type = "triangle";
-      osc2.frequency.setValueAtTime(1046.5, now + 0.12);
-      gain2.gain.setValueAtTime(0.25, now + 0.12);
-      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.start(now + 0.12);
-      osc2.stop(now + 0.4);
-    } catch {
-      /* ignore audio context restrictions */
-    }
+    this.triggerHaptic(SoundEffects.TRANSACTION_VIBRATION);
+    this.ringThrice(1046.5, 783.99, "triangle", 0.22); // C6 ↔ G5, warm bell
   }
 
-  /** Attention-getting chime for Dispute or Alert events */
+  /** Urgent, repeated ring for an action-needed / problem event. */
   public playAlertChime() {
     if (!this.enabled) return;
-    this.triggerHaptic([80, 40, 80]);
+    this.triggerHaptic(SoundEffects.TRANSACTION_VIBRATION);
+    this.ringThrice(880, 587.33, "sawtooth", 0.18); // A5 ↔ D5, sharp
+  }
 
+  // A long, attention-grabbing vibration (~3.3 s of firm pulses) for money & order
+  // events — like a food-delivery app alerting a driver, so it isn't missed on an
+  // idle phone. (Android/Chrome honour this; iOS Safari ignores the Vibration API.)
+  private static readonly TRANSACTION_VIBRATION = [
+    700, 250, 700, 250, 700, 250, 700,
+  ];
+
+  /** One warbling "ring" (bell-like, ~0.5 s) scheduled at `at` on the audio clock. */
+  private ring(
+    ctx: AudioContext,
+    at: number,
+    hi: number,
+    lo: number,
+    type: OscillatorType,
+    vol: number,
+  ) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    // Alternate the two tones so it reads as a "rrring", not a flat beep.
+    [hi, lo, hi, lo, hi].forEach((f, i) =>
+      osc.frequency.setValueAtTime(f, at + i * 0.08),
+    );
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+    gain.gain.setValueAtTime(vol, at + 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(at);
+    osc.stop(at + 0.5);
+  }
+
+  /** Ring 3 times with a short gap — the "you have a transaction" alert. */
+  private ringThrice(hi: number, lo: number, type: OscillatorType, vol: number) {
     const ctx = this.getContext();
     if (!ctx) return;
-
-    try {
-      const now = ctx.currentTime;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc.type = "sawtooth";
-      osc.frequency.setValueAtTime(440, now); // A4
-      osc.frequency.setValueAtTime(349.23, now + 0.1); // F4
-
-      gain.gain.setValueAtTime(0.15, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      osc.start(now);
-      osc.stop(now + 0.25);
-    } catch {
-      /* ignore audio context restrictions */
+    const base = ctx.currentTime;
+    for (let i = 0; i < 3; i++) {
+      try {
+        this.ring(ctx, base + i * 0.62, hi, lo, type, vol);
+      } catch {
+        /* ignore audio context restrictions */
+      }
     }
   }
 
