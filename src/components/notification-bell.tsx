@@ -45,11 +45,24 @@ export function NotificationBell({
           setItems((prev) => {
             if (prev.some((p) => p.id === row.id)) return prev;
             
-            // Sound and haptic vibration for all incoming system/admin notifications.
-            // Money & order events get the long, ring-3×-plus-3s-buzz alert so they
-            // aren't missed on an idle phone; only minor events keep the soft chime.
+            // Choose the alert by urgency. A NEW ORDER on the seller's ad, and the
+            // buyer marking paid, are "drop everything" moments — they get the long
+            // ring-3×-plus-~3s-buzz alarm so they aren't missed on an idle phone.
+            // Money received / a completed trade gets a short pleasant chime; minor
+            // events keep the soft chat chime.
             const type = row.type || "";
             if (
+              type.includes("created") || // a new order landed on the seller's ad
+              type.includes("paid") || // buyer marked paid → seller must release
+              type.includes("unmatched") ||
+              type.includes("rejected") ||
+              type.includes("failed") ||
+              type.includes("banned") ||
+              type.includes("frozen") ||
+              type.includes("dispute")
+            ) {
+              soundEffects.playAlertChime();
+            } else if (
               type.includes("credited") ||
               type.includes("approved") ||
               type.includes("reinstated") ||
@@ -58,16 +71,6 @@ export function NotificationBell({
               type.includes("sent")
             ) {
               soundEffects.playSuccessChime();
-            } else if (
-              type.includes("unmatched") ||
-              type.includes("rejected") ||
-              type.includes("failed") ||
-              type.includes("banned") ||
-              type.includes("frozen") ||
-              type.includes("paid") ||
-              type.includes("dispute")
-            ) {
-              soundEffects.playAlertChime();
             } else {
               soundEffects.playChatChime();
             }

@@ -72,14 +72,38 @@ class SoundEffects {
     }
   }
 
-  /** Triumphant, repeated ring for money received / a completed trade. */
+  /** Short, pleasant double-note for money received / a completed trade. Not the
+   * long alarm — a finished trade doesn't need the "drop everything" treatment. */
   public playSuccessChime() {
     if (!this.enabled) return;
-    this.triggerHaptic(SoundEffects.TRANSACTION_VIBRATION);
-    this.ringThrice(1046.5, 783.99, "triangle", 0.22); // C6 ↔ G5, warm bell
+    this.triggerHaptic([40, 60, 40]);
+
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const note = (freq: number, at: number, dur: number, vol: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, at);
+        gain.gain.setValueAtTime(vol, at);
+        gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(at);
+        osc.stop(at + dur);
+      };
+      note(783.99, now, 0.2, 0.2); // G5
+      note(1046.5, now + 0.12, 0.28, 0.25); // C6
+    } catch {
+      /* ignore audio context restrictions */
+    }
   }
 
-  /** Urgent, repeated ring for an action-needed / problem event. */
+  /** The LONG "new order / act now" alarm — rings 3× with a ~3.3 s buzz. Reserved
+   * for events that need the seller to drop what they're doing (a new order lands,
+   * the buyer marks paid) or a problem. Modeled on food-delivery driver alerts. */
   public playAlertChime() {
     if (!this.enabled) return;
     this.triggerHaptic(SoundEffects.TRANSACTION_VIBRATION);
