@@ -16,10 +16,24 @@ next-env.d.ts
 # testing
 /coverage
 
-# env — NEVER commit secrets (service-role key, Tron private key, etc.)
+# env — NEVER commit secrets (service-role key, Tron private key, mnemonic, etc.)
+# Ignore every .env* variant (.env, .env.local, .env.production, .env.mainnet …)
+# but keep the committed placeholder template.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# stray secret / key material — a fat-finger must never commit these. Covers the
+# output of scripts/gen-mainnet-keys.cjs if it's ever saved to a file, exported
+# wallet keys, mnemonics, etc.
+*.key
+*.keys
+*.secret
+*keys*.txt
+*secret*.txt
+*mnemonic*.txt
+*wallet*.txt
+*private*key*.txt
 
 # supabase local artifacts
 /supabase/.temp
