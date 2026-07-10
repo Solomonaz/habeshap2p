@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { fetchActiveAds, type AdWithPoster } from "@/lib/ads";
@@ -8,6 +8,7 @@ import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_COLOR } from "@/lib/labels";
 import { traderName, traderInitialFrom, traderColor } from "@/lib/handle";
+import { isOnline } from "@/lib/presence";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
 
 // Tabs are from the TAKER's perspective (like Binance P2P):
@@ -30,8 +31,18 @@ export function OrderBook({
   const [method, setMethod] = useState<MethodFilter>("ALL");
   const [amount, setAmount] = useState("");
   const [live, setLive] = useState(false);
+  // Each listed trader's last_seen, kept fresh independently of the ads stream
+  // (presence changes don't touch the ads table). Seeded from the SSR snapshot.
+  const [presence, setPresence] = useState<Record<string, string | null>>(() => {
+    const m: Record<string, string | null> = {};
+    for (const a of initialAds) if (a.poster) m[a.user_id] = a.poster.last_seen_at ?? null;
+    return m;
+  });
 
   const supabase = useMemo(() => createClient(), []);
+  // Latest ads for the presence poll, without re-creating its interval each change.
+  const adsRef = useRef(ads);
+  adsRef.current = ads;
 
   const refetch = useCallback(async () => {
     try {
@@ -58,6 +69,34 @@ export function OrderBook({
       void supabase.removeChannel(channel);
     };
   }, [supabase, refetch]);
+
+  // Live online/offline: re-read every listed trader's last_seen every 15s. Each
+  // poll writes a fresh object so the card re-renders and a trader who stopped
+  // heartbeating flips to "offline" within the presence window, in real time.
+  useEffect(() => {
+    let active = true;
+    const poll = async () => {
+      const ids = [...new Set(adsRef.current.map((a) => a.user_id))];
+      if (ids.length === 0) {
+        if (active) setPresence({});
+        return;
+      }
+      const { data } = await supabase
+        .from("public_profiles")
+        .select("id, last_seen_at")
+        .in("id", ids);
+      if (!active) return;
+      const next: Record<string, string | null> = {};
+      for (const row of data ?? []) next[row.id] = row.last_seen_at ?? null;
+      setPresence(next);
+    };
+    void poll();
+    const timer = setInterval(poll, 15_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [supabase]);
 
   const wantSide = tab === "buy" ? "SELL" : "BUY";
 
@@ -181,6 +220,7 @@ export function OrderBook({
               ad={ad}
               tab={tab}
               paymentWindowMinutes={paymentWindowMinutes}
+              lastSeen={presence[ad.user_id] ?? ad.poster?.last_seen_at ?? null}
             />
           ))}
         </ul>
@@ -220,14 +260,17 @@ function AdCard({
   ad,
   tab,
   paymentWindowMinutes,
+  lastSeen,
 }: {
   ad: AdWithPoster;
   tab: Tab;
   paymentWindowMinutes: number;
+  lastSeen: string | null;
 }) {
   const takerBuys = tab === "buy";
   const name = traderName(ad.poster?.full_name, ad.user_id);
   const verified = ad.poster?.is_verified ?? false;
+  const online = isOnline(lastSeen);
   // Order ceiling derived from the ETB limits. For a SELL ad we use the seller's
   // LIVE max (capped by their current balance, migration 0059) so buyers never see
   // a limit the seller can't fund; it only ever exposes the ad's own liquidity.
@@ -241,12 +284,20 @@ function AdCard({
       {/* Trader row */}
       <div className="flex items-center gap-2.5">
         <span
-          className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-paper-raised"
+          className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-paper-raised"
           style={{ backgroundColor: traderColor(ad.user_id) }}
         >
           {traderInitialFrom(ad.poster?.full_name, ad.user_id)}
+          {/* Live status dot on the avatar corner. */}
+          <span
+            aria-hidden
+            className={
+              "absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full ring-2 ring-paper-raised " +
+              (online ? "bg-buy" : "bg-ink-faint")
+            }
+          />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-sm font-semibold text-ink">
               {name}
@@ -281,6 +332,26 @@ function AdCard({
               : "New trader"}
           </p>
         </div>
+
+        {/* Real-time online/offline status — critical so the taker knows whether
+            the counterparty is around to respond. */}
+        <span
+          className={
+            "flex shrink-0 items-center gap-1.5 self-start rounded-full px-2 py-0.5 text-[11px] font-medium " +
+            (online
+              ? "bg-buy/15 text-buy"
+              : "bg-paper-sunken text-ink-muted")
+          }
+        >
+          <span
+            aria-hidden
+            className={
+              "h-1.5 w-1.5 rounded-full " +
+              (online ? "animate-pulse bg-buy" : "bg-ink-faint")
+            }
+          />
+          {online ? "Online" : "Offline"}
+        </span>
       </div>
 
       {/* Price + button row */}
