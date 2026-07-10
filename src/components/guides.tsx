@@ -8,6 +8,10 @@ import { HowItWorks, Steps, Callout } from "@/components/how-it-works";
  */
 
 const b = (s: string) => <span className="font-medium text-ink">{s}</span>;
+/** Red emphasis for the most safety-critical wording. */
+const r = (s: string) => <span className="font-semibold text-sell">{s}</span>;
+/** Amber (yellow) emphasis for warnings about consequences. */
+const y = (s: string) => <span className="font-semibold text-amber">{s}</span>;
 
 /** Buying & selling USDT for Birr — shown on the trade page. */
 export function TradeGuide() {
@@ -25,8 +29,9 @@ export function TradeGuide() {
         items={[
           <>Pick a seller&apos;s offer from the order book and tap {b("Buy")}.</>,
           <>Enter how much you want; you&apos;ll see the exact Birr to pay. Enter the {b("name on the account you'll pay from")} and open the order.</>,
-          <>The seller&apos;s USDT is now locked in escrow. Wait for the seller to reply in chat, then send the Birr to the {b("Telebirr / bank account shown on the order")}.</>,
-          <>Once you&apos;ve sent the Birr, tap {b("I've paid")}.</>,
+          <>The seller&apos;s USDT is now locked in escrow and a chat opens.</>,
+          <>{r("Before sending any Birr, check the seller is Online and message them first — send the money only after they reply.")}</>,
+          <>Send the Birr to the {b("Telebirr / bank account shown on the order")}, then tap {b("I've paid")}. {r("That button stays locked until the seller has replied to you")}, so you&apos;re never rushed into paying an unresponsive seller.</>,
           <>The seller confirms the money arrived and {b("releases")} the USDT — it lands in your balance. Done.</>,
         ]}
       />
@@ -48,6 +53,11 @@ export function TradeGuide() {
         evidence. USDT is never auto-released — only the seller (or an admin
         ruling) can release it.
       </Callout>
+      <Callout tone="note">
+        {y("Trade honestly.")} Trying to cheat — falsely claiming you paid, filing
+        a fake dispute, or scamming your counterparty — will get your account{" "}
+        {y("frozen")}, and can cost you your {y("entire USDT balance")}.
+      </Callout>
       <p className="mt-2 text-xs text-ink-faint">
         A small platform fee applies to each trade; you see the exact amounts
         before you confirm.
@@ -66,9 +76,9 @@ export function DepositGuide() {
       </p>
       <Steps
         items={[
-          <>Enter how much you want to deposit — you&apos;ll get a {b("shared address")} and one {b("exact amount")} to send.</>,
+          <>Enter how much you want to deposit — you&apos;ll get an {b("address")} and one {b("exact amount")} to send.</>,
           <>From your external wallet or exchange, send {b("USDT on the Tron (TRC-20) network")} to that address.</>,
-          <>Send the {b("exact amount shown, to the last digit")} — that&apos;s how the system knows the deposit is yours and credits it automatically.</>,
+          <>Send the {r("exact amount shown, to the last digit")} — that&apos;s how the system knows the deposit is yours and credits it automatically.</>,
           <>After the network confirms it (usually a few minutes), it appears in your balance.</>,
           <>If it hasn&apos;t shown up after confirmation, use {b("“Deposit delayed? Verify by TxHash”")} and paste your transaction ID.</>,
         ]}
