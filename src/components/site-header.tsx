@@ -9,6 +9,7 @@ import { initialsFromName, type AccountIdentity } from "@/lib/identity";
 import { navIcon } from "@/components/nav-icons";
 import { NotificationBell } from "@/components/notification-bell";
 import { fetchNotifications, type NotificationRow } from "@/lib/notifications";
+import { countUnreadSupportForUser } from "@/lib/support";
 
 type Page = "market" | "mine" | "orders" | "dashboard" | "admin";
 
@@ -45,16 +46,19 @@ export async function SiteHeader({
   let contact: string | null = null;
   let uid: string | null = null;
   let notifications: NotificationRow[] = [];
+  let supportUnread = 0;
   if (userId) {
     const supabase = await createServerSupabase();
-    const [{ data }, notes] = await Promise.all([
+    const [{ data }, notes, sUnread] = await Promise.all([
       supabase
         .from("users")
         .select("full_name, is_admin, email, telegram_username, public_id")
         .eq("id", userId)
         .maybeSingle(),
       fetchNotifications(supabase, userId),
+      countUnreadSupportForUser(supabase, userId),
     ]);
+    supportUnread = sUnread;
     if (isAdmin === undefined) showAdmin = data?.is_admin === true;
     const name = data?.full_name?.trim();
     if (name) {
@@ -134,6 +138,7 @@ export async function SiteHeader({
               contact={contact}
               uid={uid}
               isAdmin={showAdmin}
+              supportUnread={supportUnread}
             />
           )}
         </div>

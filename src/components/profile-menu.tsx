@@ -18,6 +18,7 @@ export function ProfileMenu({
   contact,
   uid,
   isAdmin,
+  supportUnread = 0,
 }: {
   name: string;
   initials: string;
@@ -26,6 +27,8 @@ export function ProfileMenu({
   /** HabeshaP2P ID (public_id) shown in the menu header. */
   uid?: string | null;
   isAdmin?: boolean;
+  /** Unread admin replies — shows a dot on the avatar and a badge in the menu. */
+  supportUnread?: number;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -63,8 +66,16 @@ export function ProfileMenu({
             : "border-paper-border bg-paper-sunken/60 hover:border-ink/25")
         }
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper sm:h-6 sm:w-6">
-          {initials}
+        <span className="relative">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-amber to-amber-soft text-[11px] font-bold text-paper sm:h-6 sm:w-6">
+            {initials}
+          </span>
+          {supportUnread > 0 && (
+            <span
+              aria-hidden
+              className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-sell ring-2 ring-paper"
+            />
+          )}
         </span>
         {/* Name + chevron only on wider screens; mobile shows just the avatar. */}
         <span className="hidden max-w-[10rem] truncate text-xs text-ink-soft sm:block">
@@ -126,6 +137,22 @@ export function ProfileMenu({
                 <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 0 0 1 1h3m10-11l2 2m-2-2v10a1 1 0 0 1-1 1h-3m-6 0a1 1 0 0 0 1-1v-4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v4a1 1 0 0 0 1 1m-6 0h6" />
               </svg>
               Account &amp; wallet
+            </Link>
+            <Link
+              href="/support"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className={itemClass}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="flex-1">Contact support</span>
+              {supportUnread > 0 && (
+                <span className="rounded-full bg-sell px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {supportUnread > 9 ? "9+" : supportUnread}
+                </span>
+              )}
             </Link>
             {isAdmin && (
               <Link

@@ -628,6 +628,29 @@ export type Database = {
           },
         ];
       };
+      support_messages: {
+        // Trader ⇄ admin support conversation (migration 0061). One thread per
+        // trader; RLS = own thread or admin; written only via the support_* RPCs.
+        Row: {
+          id: string;
+          user_id: string;
+          from_admin: boolean;
+          admin_id: string | null;
+          body: string;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: Record<string, never>;
+        Update: Record<string, never>;
+        Relationships: [
+          {
+            foreignKeyName: "support_messages_user_id_fkey";
+            columns: ["user_id"];
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       unmatched_deposits: {
         // Pooled deposits that matched no intent (migration 0036). Admin-only;
         // written by record/credit/ignore RPCs.
@@ -858,6 +881,39 @@ export type Database = {
           effective_max_etb: string;
           fundable: boolean;
         }[];
+      };
+      // Trader ⇄ admin support (migration 0061).
+      support_user_send: {
+        Args: { p_user: string; p_body: string };
+        Returns: Database["public"]["Tables"]["support_messages"]["Row"];
+      };
+      support_admin_send: {
+        Args: { p_admin: string; p_user: string; p_body: string };
+        Returns: Database["public"]["Tables"]["support_messages"]["Row"];
+      };
+      support_mark_read_user: {
+        Args: { p_user: string };
+        Returns: undefined;
+      };
+      support_mark_read_admin: {
+        Args: { p_admin: string; p_user: string };
+        Returns: undefined;
+      };
+      admin_support_threads: {
+        Args: Record<string, never>;
+        Returns: {
+          user_id: string;
+          full_name: string | null;
+          public_id: string | null;
+          last_body: string;
+          last_from_admin: boolean;
+          last_at: string;
+          unread: number;
+        }[];
+      };
+      admin_support_unread_count: {
+        Args: Record<string, never>;
+        Returns: number;
       };
       admin_income_breakdown: {
         Args: Record<string, never>;

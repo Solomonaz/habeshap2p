@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { accountIdentity } from "@/lib/identity";
 import { fetchNotifications } from "@/lib/notifications";
+import { fetchAdminSupportUnread } from "@/lib/support";
 import { AdminShell } from "@/components/admin/admin-shell";
 
 // The admin console must never be indexed (defence beyond the robots.txt disallow).
@@ -35,10 +36,18 @@ export default async function AdminLayout({
   if (profile?.is_admin !== true) redirect("/market");
 
   const account = accountIdentity(user, profile?.full_name);
-  const notifications = await fetchNotifications(supabase, user.id);
+  const [notifications, supportUnread] = await Promise.all([
+    fetchNotifications(supabase, user.id),
+    fetchAdminSupportUnread(),
+  ]);
 
   return (
-    <AdminShell account={account} userId={user.id} notifications={notifications}>
+    <AdminShell
+      account={account}
+      userId={user.id}
+      notifications={notifications}
+      supportUnread={supportUnread}
+    >
       {children}
     </AdminShell>
   );

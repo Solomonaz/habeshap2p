@@ -60,6 +60,11 @@ const NAV: {
     icon: <Icon path={<><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 6a3 3 0 0 1 0 6" /><path d="M18 14a6 6 0 0 1 3 5" /></>} />,
   },
   {
+    href: "/admin/support",
+    label: "Support",
+    icon: <Icon path={<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></>} />,
+  },
+  {
     href: "/admin/preflight",
     label: "Pre-flight",
     icon: <Icon path={<><path d="M12 2a7 7 0 0 1 7 7c0 3-2 5.5-4 7l-3 4-3-4c-2-1.5-4-4-4-7a7 7 0 0 1 7-7z" /><circle cx="12" cy="9" r="2.5" /></>} />,
@@ -104,10 +109,12 @@ function isActive(pathname: string, item: (typeof NAV)[number]): boolean {
 function NavLinks({
   pathname,
   unreadCount,
+  supportUnread,
   onNavigate,
 }: {
   pathname: string;
   unreadCount?: number;
+  supportUnread?: number;
   onNavigate?: () => void;
 }) {
   return (
@@ -115,6 +122,7 @@ function NavLinks({
       {NAV.map((item) => {
         const active = isActive(pathname, item);
         const isNotif = item.href === "/admin/notifications";
+        const isSupport = item.href === "/admin/support";
         return (
           <Link
             key={item.href}
@@ -149,6 +157,11 @@ function NavLinks({
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
+            {isSupport && !!supportUnread && supportUnread > 0 && (
+              <span className="rounded-full bg-sell px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {supportUnread > 9 ? "9+" : supportUnread}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -159,10 +172,12 @@ function NavLinks({
 function SidebarInner({
   pathname,
   unreadCount,
+  supportUnread,
   onNavigate,
 }: {
   pathname: string;
   unreadCount?: number;
+  supportUnread?: number;
   onNavigate?: () => void;
 }) {
   return (
@@ -177,7 +192,7 @@ function SidebarInner({
         <p className="px-3 pb-2 pt-2 text-[11px] font-semibold uppercase tracking-wider text-ink-faint">
           Console
         </p>
-        <NavLinks pathname={pathname} unreadCount={unreadCount} onNavigate={onNavigate} />
+        <NavLinks pathname={pathname} unreadCount={unreadCount} supportUnread={supportUnread} onNavigate={onNavigate} />
       </div>
       <div className="border-t border-paper-border p-3">
         <Link
@@ -198,11 +213,13 @@ export function AdminShell({
   account,
   userId,
   notifications,
+  supportUnread,
   children,
 }: {
   account: AccountIdentity;
   userId?: string;
   notifications?: NotificationRow[];
+  supportUnread?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -214,7 +231,7 @@ export function AdminShell({
     <div className="min-h-screen md:flex">
       {/* Desktop rail */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 border-r border-paper-border bg-paper-raised md:block">
-        <SidebarInner pathname={pathname} unreadCount={unreadCount} />
+        <SidebarInner pathname={pathname} unreadCount={unreadCount} supportUnread={supportUnread} />
       </aside>
 
       {/* Mobile drawer */}
@@ -241,6 +258,7 @@ export function AdminShell({
           <SidebarInner
             pathname={pathname}
             unreadCount={unreadCount}
+            supportUnread={supportUnread}
             onNavigate={() => setDrawerOpen(false)}
           />
         </aside>
