@@ -104,7 +104,10 @@ export class TronGridChainProvider implements ChainProvider {
     this.hotWalletAddress = cfg.hotWalletAddress;
     this.hotWalletPrivateKey = cfg.hotWalletPrivateKey;
     this.depositMnemonic = cfg.depositMnemonic;
-    this.usdtContract = cfg.usdtContract ?? DEFAULT_USDT_CONTRACT;
+    // Trim + `||` (not `??`) so a stray-whitespace or blank override (a common
+    // paste artifact in a hosting dashboard) falls back to the built-in default
+    // rather than being handed to TronWeb as an invalid contract address.
+    this.usdtContract = cfg.usdtContract?.trim() || DEFAULT_USDT_CONTRACT;
   }
 
   /**
