@@ -7,7 +7,7 @@ import { fetchActiveAds, type AdWithPoster } from "@/lib/ads";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS, PAYMENT_METHOD_COLOR } from "@/lib/labels";
-import { traderName, traderInitialFrom, traderColor } from "@/lib/handle";
+import { traderDisplay, traderDisplayInitial, traderColor } from "@/lib/handle";
 import { isOnline } from "@/lib/presence";
 import { PAYMENT_METHODS, type PaymentMethod } from "@/types/domain";
 
@@ -268,7 +268,11 @@ function AdCard({
   lastSeen: string | null;
 }) {
   const takerBuys = tab === "buy";
-  const name = traderName(ad.poster?.full_name, ad.user_id);
+  const name = traderDisplay(
+    ad.poster?.display_name,
+    ad.poster?.full_name,
+    ad.user_id,
+  );
   const verified = ad.poster?.is_verified ?? false;
   const online = isOnline(lastSeen);
   // Order ceiling derived from the ETB limits. For a SELL ad we use the seller's
@@ -287,7 +291,11 @@ function AdCard({
           className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-paper-raised"
           style={{ backgroundColor: traderColor(ad.user_id) }}
         >
-          {traderInitialFrom(ad.poster?.full_name, ad.user_id)}
+          {traderDisplayInitial(
+            ad.poster?.display_name,
+            ad.poster?.full_name,
+            ad.user_id,
+          )}
           {/* Live status dot on the avatar corner. */}
           <span
             aria-hidden

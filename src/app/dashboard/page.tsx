@@ -29,6 +29,7 @@ import { WithdrawForm } from "./withdraw-form";
 import { InternalTransferForm } from "./internal-transfer-form";
 import { ReferralPanel } from "./referral-panel";
 import { PooledDeposit } from "./pooled-deposit";
+import { DisplayNameForm } from "./display-name-form";
 import { AccountTabs, type AccountTab } from "./account-tabs";
 import { DepositGuide, SendGuide, WithdrawGuide } from "@/components/guides";
 import { devFaucet } from "./actions";
@@ -84,7 +85,7 @@ export default async function DashboardPage() {
     supabase
       .from("users")
       .select(
-        "public_id, reputation_score, completed_trades, completion_rate, is_merchant, kyc_status, account_status, ban_reason",
+        "public_id, full_name, display_name, reputation_score, completed_trades, completion_rate, is_merchant, kyc_status, account_status, ban_reason",
       )
       .eq("id", user.id)
       .single(),
@@ -159,6 +160,11 @@ export default async function DashboardPage() {
       icon: IconOverview,
       content: (
         <div className="space-y-4">
+          <DisplayNameForm
+            current={profile?.display_name ?? null}
+            verified={kycStatus === "APPROVED"}
+            legalName={profile?.full_name ?? ""}
+          />
           <section className="rounded-card border border-paper-border bg-paper-raised p-5">
             <h2 className="text-sm font-medium text-ink-muted">Reputation</h2>
             <dl className="mt-3 grid grid-cols-3 gap-4 text-center">

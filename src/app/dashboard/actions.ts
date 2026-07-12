@@ -17,6 +17,72 @@ import {
 
 export type MerchantState = { error?: string };
 
+export type DisplayNameState = {
+  error?: string;
+  ok?: string;
+  /** The saved nickname, or null when cleared — lets the form sync its display. */
+  value?: string | null;
+};
+
+/**
+ * Set (or clear) the signed-in user's marketplace nickname (migration 0062). The
+ * SQL RPC is the authoritative gate: it enforces KYC-verified-only, uniqueness,
+ * the reserved-word block, and the format, and raises a friendly message we pass
+ * straight through. We only authenticate the actor and pin p_user to THEIR id —
+ * the RPC is service-role only precisely so no client can rename another account.
+ * An empty value clears the nickname (public display reverts to the legal name).
+ */
+export async function setDisplayNameAction(
+  _prev: DisplayNameState,
+  formData: FormData,
+): Promise<DisplayNameState> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const name = (formData.get("display_name") ?? "").toString();
+  const admin = createAdminSupabase();
+  const { data, error } = await admin.rpc("set_display_name", {
+    p_user: user.id,
+    p_name: name,
+  });
+  if (error) {
+    return { error: error.message || "Could not save your display name." };
+  }
+  // Revalidate the surfaces the nickname shows on so it updates immediately.
+  revalidatePath("/dashboard");
+  revalidatePath("/market");
+  return {
+    ok: data ? "Display name saved." : "Display name cleared.",
+    value: (data as string | null) ?? null,
+  };
+}
+
+/**
+ * Live availability/format check for the nickname field (read-only). Returns a
+ * short status: 'ok', 'empty', 'short', 'long', 'chars', 'reserved', 'taken'.
+ * Drives the inline ✓/✗ hint as the user types; the authoritative validation is
+ * still setDisplayNameAction on submit.
+ */
+export async function checkDisplayNameAction(
+  name: string,
+): Promise<{ status: string }> {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { status: "empty" };
+  const admin = createAdminSupabase();
+  const { data, error } = await admin.rpc("display_name_status", {
+    p_user: user.id,
+    p_name: name,
+  });
+  if (error) return { status: "error" };
+  return { status: (data as string) ?? "error" };
+}
+
 export type WithdrawState = { error?: string; ok?: boolean };
 
 export type DepositIntentState = {

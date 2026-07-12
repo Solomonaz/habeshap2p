@@ -70,3 +70,31 @@ export function traderInitialFrom(
 ): string {
   return traderName(fullName, id).charAt(0).toUpperCase();
 }
+
+/**
+ * PUBLIC marketplace display name (migration 0062). Prefers the trader's chosen
+ * nickname (users.display_name), falls back to the registered legal name, then to
+ * the stable pseudonym. COSMETIC ONLY — never use for payment-account names,
+ * disputes, KYC, or admin surfaces, which must always show the verified legal
+ * name (full_name). Use this in the order book and the trade/order counterparty
+ * header, mirroring how Binance shows a nickname in the P2P list but the real
+ * bank-account name at payment time.
+ */
+export function traderDisplay(
+  displayName: string | null | undefined,
+  fullName: string | null | undefined,
+  id: string,
+): string {
+  const nick = displayName?.trim();
+  if (nick && nick.length > 0) return nick;
+  return traderName(fullName, id);
+}
+
+/** Avatar initial derived from the public marketplace display name. */
+export function traderDisplayInitial(
+  displayName: string | null | undefined,
+  fullName: string | null | undefined,
+  id: string,
+): string {
+  return traderDisplay(displayName, fullName, id).charAt(0).toUpperCase();
+}

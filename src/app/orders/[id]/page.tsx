@@ -11,7 +11,7 @@ import { EscrowRail } from "@/components/escrow-rail";
 import { formatUsdt } from "@/lib/money";
 import { formatEtb, formatRate } from "@/lib/format";
 import { PAYMENT_METHOD_LABELS } from "@/lib/labels";
-import { traderName } from "@/lib/handle";
+import { traderDisplay } from "@/lib/handle";
 import { PresenceBadge } from "@/components/presence-badge";
 import { CopyButton } from "@/components/copy-button";
 import { OrderControls } from "./order-controls";
@@ -39,7 +39,8 @@ export default async function OrderPage({
   const messages = await fetchMessages(supabase, order.id);
   const counterpartyId = isBuyer ? order.seller_id : order.buyer_id;
   const counterpartyProfile = await fetchPublicProfile(supabase, counterpartyId);
-  const counterpartyName = traderName(
+  const counterpartyName = traderDisplay(
+    counterpartyProfile?.display_name,
     counterpartyProfile?.full_name,
     counterpartyId,
   );

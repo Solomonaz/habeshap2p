@@ -99,11 +99,14 @@ export type Database = {
           ban_reason: string | null;
           // Presence heartbeat (migration 0042); null = never seen online.
           last_seen_at: string | null;
+          // Cosmetic marketplace nickname (migration 0062); null = show legal name.
+          display_name: string | null;
           created_at: string;
         };
         Insert: {
           id: string;
           full_name?: string | null;
+          display_name?: string | null;
           phone?: string | null;
           email?: string | null;
           telegram_id?: number | null;
@@ -139,6 +142,7 @@ export type Database = {
           frozen_at?: string | null;
           ban_reason?: string | null;
           last_seen_at?: string | null;
+          display_name?: string | null;
         };
         Relationships: [];
       };
@@ -697,11 +701,21 @@ export type Database = {
           full_name: string | null;
           is_verified: boolean;
           last_seen_at: string | null;
+          // Cosmetic marketplace nickname (migration 0062); null = show legal name.
+          display_name: string | null;
         };
         Relationships: [];
       };
     };
     Functions: {
+      set_display_name: {
+        Args: { p_user: string; p_name: string };
+        Returns: string | null;
+      };
+      display_name_status: {
+        Args: { p_user: string; p_name: string };
+        Returns: string;
+      };
       notify: {
         Args: {
           p_user: string;

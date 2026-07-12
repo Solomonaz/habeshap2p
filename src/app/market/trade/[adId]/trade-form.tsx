@@ -11,7 +11,7 @@ import {
 import { formatEtb, formatRate } from "@/lib/format";
 import { formatUsdt } from "@/lib/money";
 import { formatTradeLimit } from "@/lib/reputation";
-import { traderName } from "@/lib/handle";
+import { traderDisplay } from "@/lib/handle";
 import { CopyButton } from "@/components/copy-button";
 import { openOrder, type OpenOrderState } from "./actions";
 
@@ -111,7 +111,11 @@ export function TradeForm({
           <dt className="text-ink-muted">Counterparty</dt>
           <dd className="flex items-center gap-1.5 text-ink-soft">
             <span className="text-ink">
-              {traderName(ad.poster?.full_name, ad.user_id)}
+              {traderDisplay(
+                ad.poster?.display_name,
+                ad.poster?.full_name,
+                ad.user_id,
+              )}
             </span>
             {ad.poster?.is_verified && (
               <span
